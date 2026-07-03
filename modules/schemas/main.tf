@@ -1,0 +1,19 @@
+# modules/schemas/main.tf
+
+terraform {
+  required_providers {
+    snowflake = {
+      source  = "snowflakedb/snowflake"
+      version = "2.17.0" 
+    }
+  }
+}
+
+resource "snowflake_schema" "this" {
+  for_each                    = var.schemas
+  name                        = each.key
+  database                    = each.value.database
+  comment                     = each.value.comment
+  data_retention_time_in_days = each.value.data_retention_time_in_days
+  with_managed_access         = each.value.with_managed_access
+}
