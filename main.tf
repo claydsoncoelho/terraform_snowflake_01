@@ -49,8 +49,8 @@ terraform {
 locals {
   organization_name = "egtaggb"
   account_name      = "ik00397"
-  user              = var.snowflake_user
-  private_key_path  = var.snowflake_private_key_path
+  snowflake_user              = var.snowflake_user
+  snowflake_private_key_path  = var.snowflake_private_key_path
 }
 
 # Configure the Snowflake provider with authentication details
@@ -65,10 +65,10 @@ locals {
 provider "snowflake" {
   organization_name = local.organization_name
   account_name      = local.account_name
-  user              = local.user
+  user              = local.snowflake_user
   role              = "SYSADMIN" # Focuses on infrastructure ownership
   authenticator     = "SNOWFLAKE_JWT"
-  private_key       = file(local.private_key_path)
+  private_key       = file(local.snowflake_private_key_path)
 }
 
 # Aliased Security Provider (Used for Roles & User Management)

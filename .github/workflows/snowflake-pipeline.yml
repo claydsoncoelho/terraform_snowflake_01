@@ -21,7 +21,7 @@ permissions:
 env:
   # Snowflake Credentials passed down from GitHub Actions Encrypted Secrets
   TF_VAR_snowflake_user: ${{ secrets.SNOWFLAKE_USER }}
-  TF_VAR_snowflake_private_key_path: "./snowflake_tf_private_key.pem"
+  TF_VAR_snowflake_private_key_path: "~/.ssh/snowflake_tf_private_key.pem"
   
   # Azure Credentials needed to access and lock the Remote State Backend
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -45,7 +45,15 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Extract Snowflake Private Key File
-        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ./snowflake_tf_private_key.pem
+        run: |
+          # 1. Create the secure hidden folder inside the runner's user home directory
+          mkdir -p ~/.ssh
+          
+          # 2. Extract the secret directly into the exact path your tfvars file expects
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ~/.ssh/snowflake_tf_private_key.pem
+          
+          # 3. Restrict permissions so the provider doesn't complain about an exposed key
+          chmod 600 ~/.ssh/snowflake_tf_private_key.pem
 
       - name: Azure CLI Login via OIDC
         uses: azure/login@v2
@@ -109,8 +117,12 @@ jobs:
       - name: Install Terraform CLI
         uses: hashicorp/setup-terraform@v3
 
+      # Updated: Mirrors the exact directory placement used in the Plan stage
       - name: Extract Snowflake Private Key File
-        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ./snowflake_tf_private_key.pem
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ~/.ssh/snowflake_tf_private_key.pem
+          chmod 600 ~/.ssh/snowflake_tf_private_key.pem
 
       - name: Azure CLI Login via OIDC
         uses: azure/login@v2
