@@ -14,6 +14,17 @@ egtaggb.ik00397
 
 This creates the private and public keys we use to authenticate the service account we will use for Terraform.
 
+Create private key
+```
+openssl genrsa -out snowflake_tf_private_key.pem 2048
+```
+
+Create public key
+```
+openssl rsa -in snowflake_tf_private_key.pem -pubout -out snowflake_tf_public_key.pub
+```
+
+Alternatively
 ```
 $ cd ~/.ssh
 $ openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out snowflake_tf_snow_key.p8 -nocrypt
@@ -31,6 +42,11 @@ CREATE USER TERRAFORM_SVC
 
 GRANT ROLE SYSADMIN TO USER TERRAFORM_SVC;
 GRANT ROLE SECURITYADMIN TO USER TERRAFORM_SVC;
+```
+
+OR
+```
+ALTER USER TERRAFORM_SVC SET RSA_PUBLIC_KEY = '<public key content>';
 ```
 
 ## Preparing the Project to Run
@@ -58,6 +74,7 @@ terraform plan -var-file=variables_values_dev.tfvars
 ```
 
 # Directory Structure
+
 ```
 ├── main.tf                     # Root configuration (calls modules and sets up provider)
 ├── variables.tf                # Root input variables
@@ -68,6 +85,5 @@ terraform plan -var-file=variables_values_dev.tfvars
     ├── security/
     └── roles/              
         ├── main.tf
-        ├── variables.tf
-        └── outputs.tf
+        └── variables.tf
 ```

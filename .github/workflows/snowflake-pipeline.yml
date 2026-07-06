@@ -1,0 +1,126 @@
+name: "Snowflake GitOps Pipeline"
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+  push:
+    branches: [ "main" ]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+
+# Ensure permissions allow writing PR comments and checking out code cleanly
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  # Snowflake Credentials passed down from GitHub Actions Encrypted Secrets
+  TF_VAR_snowflake_user: ${{ secrets.SNOWFLAKE_USER }}
+  TF_VAR_snowflake_private_key_path: "./snowflake_tf_private_key.pem"
+  
+  # Azure Credentials needed to access and lock the Remote State Backend
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_OIDC: true # Uses secure passwordless OpenID Connect authentication to Azure
+
+jobs:
+  #========================================================================
+  # STAGE 1: PLAN (Runs exclusively when a Pull Request is opened or updated)
+  #========================================================================
+  terraform_plan:
+    name: "Terraform Execution Plan"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Extract Snowflake Private Key File
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ./snowflake_tf_private_key.pem
+
+      - name: Azure CLI Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Initialize Backend
+        run: terraform init
+
+      - name: Run Plan and Capture Output
+        id: plan
+        run: |
+          # 1. We generate the binary 'tfplan' for the apply step later
+          # 2. We use the 'tee' utility to simultaneously stream the human-readable 
+          #    plan into a separate text file called 'plan_output.txt'
+          terraform plan -no-color -out=tfplan | tee plan_output.txt
+          
+      - name: Write Plan to Pull Request Comments
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // 1. Read the plain text plan file we captured in the previous step
+            const planText = fs.readFileSync('plan_output.txt', 'utf8');
+            
+            // 2. Format the comment body with nice markdown formatting and a toggle box
+            const commentBody = `### 🚀 Snowflake Terraform Plan Generated Successfully!
+            
+            <details><summary>🔍 Click here to expand and view full execution plan details</summary>
+            
+            \`\`\`terraform
+            ${planText}
+            \`\`\`
+            
+            </details>
+            
+            *Review the planned mutations before approving and merging this branch change.*`;
+            
+            // 3. Post the combined string to the active Pull Request conversation
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            })
+
+  #========================================================================
+  # STAGE 2: APPLY (Runs only when changes are officially approved and merged to Main)
+  #========================================================================
+  terraform_apply:
+    name: "Terraform Production Deployment"
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Extract Snowflake Private Key File
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ./snowflake_tf_private_key.pem
+
+      - name: Azure CLI Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Initialize Backend
+        run: terraform init
+
+      - name: Execute Live Deployment Modifications
+        run: terraform apply -auto-approve

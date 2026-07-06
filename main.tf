@@ -26,6 +26,18 @@ terraform {
       version = "2.17.0" 
     }
   }
+
+  # Backend configuration for Azure Blob Storage
+  # Stores Terraform state remotely for team collaboration and state locking
+  # You should comment this out if you are running Terraform locally without remote state management
+  # Use this command to migrate your local state to the remote backend: `terraform init -migrate-state`
+  # You can also use `az login` or `az logout` to authenticate with Azure CLI for backend access55rrr
+  backend "azurerm" {
+    resource_group_name  = "snowflake_learning"
+    storage_account_name = "snowflake4learning"
+    container_name       = "my-container"
+    key                  = "snowflake.prod.terraform.tfstate" # Name of your state file
+  }
 }
 
 #========================================================================
