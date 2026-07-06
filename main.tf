@@ -36,7 +36,10 @@ terraform {
     resource_group_name  = "snowflake_learning"
     storage_account_name = "snowflake4learning"
     container_name       = "my-container"
-    key                  = "snowflake.prod.terraform.tfstate" # Name of your state file
+    key                  = "snowflake.prod.terraform.tfstate" # Name of state file
+    # Forces Terraform to use your OIDC Token/RBAC 
+    # instead of trying to list the Storage Account Master Keys
+    use_azuread_auth     = true
   }
 }
 
