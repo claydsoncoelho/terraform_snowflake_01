@@ -36,6 +36,9 @@ snowflake_private_key_path       = "~/.ssh/snowflake_tf_private_key.pem"
 # ROLES
 #========================================================================
 account_roles = {
+  "INGESTION_ROLE" = {
+    comment = "Role for data ingestion jobs (e.g. Snowpipe, Streams, Tasks)"
+  }
   "TRANSFORMER_ROLE" = {
     comment = "Role for running dbt/data transformation jobs"
   }
@@ -49,7 +52,8 @@ account_roles = {
 #========================================================================
 role_to_role_grants = [
   { role = "TRANSFORMER_ROLE", parent_role = "SYSADMIN" },
-  { role = "REPORTING_ROLE",   parent_role = "SYSADMIN" }
+  { role = "REPORTING_ROLE",   parent_role = "SYSADMIN" },
+  { role = "INGESTION_ROLE",   parent_role = "SYSADMIN" }
 ]
 
 #========================================================================
@@ -73,7 +77,6 @@ databases = {
 schemas = {
   "CITI_BIKE"      = { database = "RAW_DB", data_retention_time_in_days = 14 }
   "WEATHER_NYC"    = { database = "RAW_DB" }
-  "STRIPE_BILLING" = { database = "RAW_DB" }
 
   "STAGING"   = { database = "ANALYTICS_DB", with_managed_access = true }
   "MARTS"     = { database = "ANALYTICS_DB", with_managed_access = true }
@@ -85,11 +88,18 @@ schemas = {
 # PRIVILEGES
 #========================================================================
 database_privileges = [
+  { database = "RAW_DB", role = "INGESTION_ROLE", privilege = "USAGE" },
   { database = "RAW_DB", role = "TRANSFORMER_ROLE", privilege = "USAGE" },
-  { database = "ANALYTICS_DB", role = "REPORTING_ROLE", privilege = "USAGE" }
+  { database = "ANALYTICS_DB", role = "TRANSFORMER_ROLE", privilege = "USAGE" },
+  { database = "ANALYTICS_DB", role = "REPORTING_ROLE", privilege = "USAGE" },
 ]
 
 schema_privileges = [
+  { database = "RAW_DB", schema = "WEATHER_NYC", role = "INGESTION_ROLE", privilege = "USAGE" },
   { database = "RAW_DB", schema = "WEATHER_NYC", role = "TRANSFORMER_ROLE", privilege = "USAGE" },
-  { database = "ANALYTICS_DB", schema = "MARTS", role = "REPORTING_ROLE", privilege = "USAGE" }
+  { database = "RAW_DB", schema = "CITI_BIKE", role = "INGESTION_ROLE", privilege = "USAGE" },
+  { database = "RAW_DB", schema = "CITI_BIKE", role = "TRANSFORMER_ROLE", privilege = "USAGE" },
+  { database = "ANALYTICS_DB", schema = "STAGING", role = "TRANSFORMER_ROLE", privilege = "USAGE" },
+  { database = "ANALYTICS_DB", schema = "MARTS", role = "TRANSFORMER_ROLE", privilege = "USAGE" },
+  { database = "ANALYTICS_DB", schema = "REPORTING", role = "REPORTING_ROLE", privilege = "USAGE" },
 ]
