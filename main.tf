@@ -36,7 +36,10 @@ terraform {
     resource_group_name  = "snowflake_learning"
     storage_account_name = "snowflake4learning"
     container_name       = "my-container"
-    key                  = "snowflake.prod.terraform.tfstate" # Name of your state file
+    key                  = "snowflake.prod.terraform.tfstate" # Name of state file
+    # Forces Terraform to use your OIDC Token/RBAC 
+    # instead of trying to list the Storage Account Master Keys
+    use_azuread_auth     = true
   }
 }
 
@@ -46,8 +49,8 @@ terraform {
 locals {
   organization_name = "egtaggb"
   account_name      = "ik00397"
-  user              = var.snowflake_user
-  private_key_path  = var.snowflake_private_key_path
+  snowflake_user              = var.snowflake_user
+  snowflake_private_key_path  = var.snowflake_private_key_path
 }
 
 # Configure the Snowflake provider with authentication details
@@ -62,10 +65,10 @@ locals {
 provider "snowflake" {
   organization_name = local.organization_name
   account_name      = local.account_name
-  user              = local.user
+  user              = local.snowflake_user
   role              = "SYSADMIN" # Focuses on infrastructure ownership
   authenticator     = "SNOWFLAKE_JWT"
-  private_key       = file(local.private_key_path)
+  private_key       = file(local.snowflake_private_key_path)
 }
 
 # Aliased Security Provider (Used for Roles & User Management)
@@ -73,10 +76,10 @@ provider "snowflake" {
   alias             = "security"
   organization_name = local.organization_name
   account_name      = local.account_name
-  user              = local.user
+  user              = local.snowflake_user
   role              = "SECURITYADMIN" # Focuses on security and RBAC
   authenticator     = "SNOWFLAKE_JWT"
-  private_key       = file(local.private_key_path)
+  private_key       = file(local.snowflake_private_key_path)
 }
 
 #========================================================================
