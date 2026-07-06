@@ -76,10 +76,10 @@ provider "snowflake" {
   alias             = "security"
   organization_name = local.organization_name
   account_name      = local.account_name
-  user              = local.user
+  user              = local.snowflake_user
   role              = "SECURITYADMIN" # Focuses on security and RBAC
   authenticator     = "SNOWFLAKE_JWT"
-  private_key       = file(local.private_key_path)
+  private_key       = file(local.snowflake_private_key_path)
 }
 
 #========================================================================
