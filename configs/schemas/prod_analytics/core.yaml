@@ -1,0 +1,4 @@
+# configs/schemas/prod_analytics/core.yaml
+
+name: "CORE"
+comment: "Cleaned, transformed, and conformed dimensional models (Silver layer)"

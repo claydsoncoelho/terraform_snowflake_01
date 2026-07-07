@@ -6,11 +6,13 @@ on:
     paths:
       - '**.tf'
       - '**.tfvars'
+      - 'configs/**.yaml'
   push:
     branches: [ "main" ]
     paths:
       - '**.tf'
       - '**.tfvars'
+      - 'configs/**.yaml'
 
 # Ensure permissions allow writing PR comments and checking out code cleanly
 permissions:
@@ -71,7 +73,8 @@ jobs:
           # 1. We generate the binary 'tfplan' for the apply step later
           # 2. We use the 'tee' utility to simultaneously stream the human-readable 
           #    plan into a separate text file called 'plan_output.txt'
-          terraform plan -no-color -out=tfplan | tee plan_output.txt
+          # OPTIMIZATION: Pass -input=false to guarantee the pipeline never hangs on variables
+          terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
           
       - name: Write Plan to Pull Request Comments
         uses: actions/github-script@v7
@@ -135,4 +138,5 @@ jobs:
         run: terraform init
 
       - name: Execute Live Deployment Modifications
-        run: terraform apply -auto-approve
+        # OPTIMIZATION: Explicitly pass -input=false here as well
+        run: terraform apply -input=false -auto-approve
