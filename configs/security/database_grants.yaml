@@ -1,0 +1,17 @@
+# configs/security/database_grants.yaml
+
+- database: "PROD_RAW"
+  role: "INGESTION_ROLE"
+  privilege: "USAGE"
+
+- database: "PROD_RAW"
+  role: "TRANSFORMER_ROLE"
+  privilege: "USAGE"
+
+- database: "PROD_ANALYTICS"
+  role: "TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "PROD_ANALYTICS"
+  role: "REPORTING_ROLE"
+  privilege: "USAGE"

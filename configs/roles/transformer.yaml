@@ -1,0 +1,4 @@
+# configs/account_roles/transformer.yaml
+
+name: "TRANSFORMER_ROLE"
+comment: "Role for running dbt/data transformation jobs"

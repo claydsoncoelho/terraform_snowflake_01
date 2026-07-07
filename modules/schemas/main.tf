@@ -11,7 +11,7 @@ terraform {
 
 resource "snowflake_schema" "this" {
   for_each                    = var.schemas
-  name                        = each.key
+  name                        = each.value.name
   database                    = each.value.database
   comment                     = each.value.comment
   data_retention_time_in_days = each.value.data_retention_time_in_days

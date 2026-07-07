@@ -1,0 +1,5 @@
+# configs/databases/prod_raw.yaml
+
+name: "PROD_RAW"
+comment: "Data Lake Landing Zone."
+data_retention_time_in_days: 14

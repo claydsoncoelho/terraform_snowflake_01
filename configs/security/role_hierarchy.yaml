@@ -1,0 +1,10 @@
+# configs/security/role_hierarchy.yaml
+
+- role: "TRANSFORMER_ROLE"
+  parent_role: "SYSADMIN"
+
+- role: "REPORTING_ROLE"
+  parent_role: "SYSADMIN"
+
+- role: "INGESTION_ROLE"
+  parent_role: "SYSADMIN"
