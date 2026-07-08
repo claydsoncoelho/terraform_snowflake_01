@@ -10,7 +10,7 @@ terraform {
 }
 
 resource "snowflake_grant_account_role" "this" {
-  for_each = { for idx, grant in var.role_hierarchy : "${grant.role}_TO_${grant.parent_role}" => grant }
+  for_each = { for idx, grant in var.role_hierarchy : "${grant.role}__TO__${grant.parent_role}" => grant }
 
   role_name        = each.value.role
   parent_role_name = each.value.parent_role

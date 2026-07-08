@@ -10,7 +10,7 @@ terraform {
 }
 
 resource "snowflake_grant_privileges_to_account_role" "this" {
-  for_each = { for idx, grant in var.grants : "${grant.database}_${grant.schema}_${grant.role}_${grant.privilege}" => grant }
+  for_each = { for idx, grant in var.grants : "${grant.privilege}__ON__${grant.database}.${grant.schema}__TO__${grant.role}" => grant }
 
   account_role_name = each.value.role
   privileges        = [each.value.privilege]

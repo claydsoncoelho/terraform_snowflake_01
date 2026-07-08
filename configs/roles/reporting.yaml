@@ -1,4 +1,0 @@
-# configs/account_roles/reporting.yaml
-
-name: "REPORTING_ROLE"
-comment: "Role for BI tools and analysts to consume report data"

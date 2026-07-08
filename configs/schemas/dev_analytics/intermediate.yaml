@@ -1,0 +1,5 @@
+# configs/schemas/prod_analytics/intermediate.yaml
+
+name: "INTERMEDIATE"
+comment: "Transformed data for analytical use"
+with_managed_access: true

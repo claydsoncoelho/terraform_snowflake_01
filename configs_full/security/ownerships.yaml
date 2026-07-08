@@ -1,0 +1,66 @@
+# configs/security/ownerships.yaml
+
+# This file defines the ownerships for various databases and schemas in the system.
+# The ownerships are defined as a list of objects, where each object specifies the database name, schema name (if applicable), and the account role that should own it.
+# The ownerships are used to manage access control and permissions for the databases and schemas in the system.
+
+# DEV ENVIRONMENT OWNERSHIPS
+
+databases:
+  - database_name: "DEV_RAW"
+    account_role: "DEV_INGESTION_ROLE"
+
+  - database_name: "DEV_ANALYTICS"
+    account_role: "DEV_TRANSFORMER_ROLE"
+
+schemas:
+  - database_name: "DEV_RAW"
+    schema_name: "LANDING"
+    account_role: "DEV_INGESTION_ROLE"
+
+  - database_name: "DEV_ANALYTICS"
+    schema_name: "STAGE"
+    account_role: "DEV_TRANSFORMER_ROLE"
+
+  - database_name: "DEV_ANALYTICS"
+    schema_name: "INTERMEDIATE"
+    account_role: "DEV_TRANSFORMER_ROLE"
+
+  - database_name: "DEV_ANALYTICS"
+    schema_name: "MARTS"
+    account_role: "DEV_TRANSFORMER_ROLE"
+
+  - database_name: "DEV_ANALYTICS"
+    schema_name: "SNAPSHOT"
+    account_role: "DEV_TRANSFORMER_ROLE"
+
+
+# PROD ENVIRONMENT OWNERSHIPS
+
+databases:
+  - database_name: "PROD_RAW"
+    account_role: "PROD_INGESTION_ROLE"
+
+  - database_name: "PROD_ANALYTICS"
+    account_role: "PROD_TRANSFORMER_ROLE"
+
+schemas:
+  - database_name: "PROD_RAW"
+    schema_name: "LANDING"
+    account_role: "PROD_INGESTION_ROLE"
+
+  - database_name: "PROD_ANALYTICS"
+    schema_name: "STAGE"
+    account_role: "PROD_TRANSFORMER_ROLE"
+
+  - database_name: "PROD_ANALYTICS"
+    schema_name: "INTERMEDIATE"
+    account_role: "PROD_TRANSFORMER_ROLE"
+
+  - database_name: "PROD_ANALYTICS"
+    schema_name: "MARTS"
+    account_role: "PROD_TRANSFORMER_ROLE"
+
+  - database_name: "PROD_ANALYTICS"
+    schema_name: "SNAPSHOT"
+    account_role: "PROD_TRANSFORMER_ROLE"
