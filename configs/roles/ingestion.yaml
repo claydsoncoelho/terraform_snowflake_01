@@ -1,4 +1,0 @@
-# configs/account_roles/ingestion.yaml
-
-name: "INGESTION_ROLE"
-comment: "Role for data ingestion jobs (e.g. Snowpipe, Streams, Tasks)"

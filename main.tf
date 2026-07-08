@@ -36,6 +36,14 @@ locals {
   snowflake_user             = var.snowflake_user
   snowflake_private_key_path = var.snowflake_private_key_path
 
+  # ---------------------------------------------- Account Parameters -----------------------------------------
+  # YAML Parsing Engine for Account Parameters (Decodes directly into a Map)
+  account_parameters = yamldecode(fileexists("${path.module}/configs/account/account_parameter.yaml") ? file("${path.module}/configs/account/account_parameter.yaml") : "{}")
+
+  # ---------------------------------------------- Network Rules -----------------------------------------
+  # YAML Parsing Engine for Network Rules (Decodes into a Map of Objects)
+  network_rules = yamldecode(fileexists("${path.module}/configs/security/network_rules.yaml") ? file("${path.module}/configs/security/network_rules.yaml") : "{}")
+
   # ---------------------------------------------- Roles -----------------------------------------
   # YAML Parsing Engine for Account Roles
   role_files = fileset(path.module, "configs/roles/*.yaml")
@@ -73,20 +81,21 @@ locals {
   # YAML Parsing Engine for Role Hierarchy 
   # Reads the single hierarchy file and loads it into a native Terraform list
   role_hierarchy = [
-    for grant in yamldecode(file("${path.module}/configs/security/role_hierarchy.yaml")) :
+    for grant in yamldecode(fileexists("${path.module}/configs/security/role_hierarchy.yaml") ? file("${path.module}/configs/security/role_hierarchy.yaml") : "[]") :
     grant if grant != null
   ]
   # YAML Engine: Database Grants
   database_grants = [
-    for assignment in yamldecode(file("${path.module}/configs/security/database_grants.yaml")) :
+    for assignment in yamldecode(fileexists("${path.module}/configs/security/database_grants.yaml") ? file("${path.module}/configs/security/database_grants.yaml") : "[]") :
     assignment if assignment != null
   ]
   # YAML Engine: Schema Grants
   schema_grants = [
-    for assignment in yamldecode(file("${path.module}/configs/security/schema_grants.yaml")) :
+    for assignment in yamldecode(fileexists("${path.module}/configs/security/schema_grants.yaml") ? file("${path.module}/configs/security/schema_grants.yaml") : "[]") :
     assignment if assignment != null
   ]
-
+  # YAML Engine: Ownership Grants
+  ownership_data = yamldecode(fileexists("${path.module}/configs/security/ownerships.yaml") ? file("${path.module}/configs/security/ownerships.yaml") : "databases: []\nschemas: []") 
 }
 
 #========================================================================
@@ -114,9 +123,51 @@ provider "snowflake" {
   private_key       = file(local.snowflake_private_key_path)
 }
 
+# Aliased Account Admin Provider (Used for account-level operations)
+provider "snowflake" {
+  alias             = "account_admin"
+  organization_name = local.organization_name
+  account_name      = local.account_name
+  user              = local.snowflake_user
+  role              = "ACCOUNTADMIN" 
+  authenticator     = "SNOWFLAKE_JWT"
+  private_key       = file(local.snowflake_private_key_path)
+}
+
 #========================================================================
 # SYSTEM ORCHESTRATION MODULES
 #========================================================================
+
+# Dependency Order of Execution:
+
+# ├── snowflake_roles
+# |   └── role_hierarchy
+# |       ├── snowflake_database_grants
+# |       └── snowflake_schema_grants
+# |
+# └── snowflake_databases
+#     ├── snowflake_database_grants
+#     |   └── database_ownership
+#     └── snowflake_schemas
+#         └── snowflake_schema_grants
+#             └── schema_ownership
+
+#========================================================================
+# ACCOUNT CONFIGURATION
+#========================================================================
+# Apply account-level parameters (settings that affect the entire Snowflake account)
+#
+# Dependencies: None (account parameters can be set independently)
+#------------------------------------------------------------------------
+
+# Apply account-level parameters
+module "account_parameters" {
+  source = "./modules/account"
+  providers = {
+    snowflake = snowflake.account_admin
+  }
+  parameters = local.account_parameters
+}
 
 #------------------------------------------------------------------------
 # ACCOUNT ROLES
@@ -179,8 +230,8 @@ module "snowflake_database_grants" {
   # Essential Guardrails: Databases and Roles must exist entirely 
   # before your pipeline attempts to tie security rules between them!
   depends_on = [
-    module.snowflake_databases,
-    module.snowflake_roles
+    module.database_ownership,
+    module.role_hierarchy
   ]
 }
 
@@ -195,7 +246,45 @@ module "snowflake_schema_grants" {
   # Crucial Guardrails: Schemas and Roles must be completely 
   # live before attempting to bind privileges between them!
   depends_on = [
-    module.snowflake_schemas,
-    module.snowflake_roles
+    module.schema_ownership,
+    module.role_hierarchy
+  ]
+}
+
+#------------------------------------------------------------------------
+# SECURITY: Ownership Grants
+#------------------------------------------------------------------------
+# Create Ownership Entitlements for Databases
+module "database_ownership" {
+  source              = "./modules/security/ownership/database"
+  database_ownerships = local.ownership_data.databases
+
+  # Execute ownership assignment right after creation
+  depends_on = [
+    module.snowflake_databases
+  ]
+}
+
+# Create Ownership Entitlements for Schemas
+module "schema_ownership" {
+  source            = "./modules/security/ownership/schema"
+  schema_ownerships = local.ownership_data.schemas
+
+  # Execute ownership assignment right after creation
+  depends_on = [
+    module.snowflake_schemas
+  ]
+}
+
+#------------------------------------------------------------------------
+# SECURITY: Network Rules
+#------------------------------------------------------------------------
+module "snowflake_network_rules" {
+  source        = "./modules/security/network_rules"
+  network_rules = local.network_rules
+
+  # Dependency Guardrail: Ensure schemas exist before building rules inside them!
+  depends_on = [
+    module.snowflake_schemas
   ]
 }
