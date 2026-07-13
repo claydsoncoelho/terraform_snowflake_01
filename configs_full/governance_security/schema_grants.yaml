@@ -1,0 +1,82 @@
+# configs/security/schema_grants.yaml
+
+# This file defines the schema grants for various roles in the system.
+# Each entry specifies the database, schema, role, and the privilege granted to that role for the specified schema.
+# The privileges can include "ALL PRIVILEGES", "USAGE", or other specific privileges as needed.
+
+# DEV ENVIRONMENT GRANTS
+# DEV_RAW
+- database: "DEV_RAW"
+  schema: "LANDING"
+  role: "DEV_INGESTION_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "DEV_RAW"
+  schema: "LANDING"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: "USAGE"
+
+# DEV_ANALYTICS
+- database: "DEV_ANALYTICS"
+  schema: "STAGE"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "DEV_ANALYTICS"
+  schema: "INTERMEDIATE"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "DEV_ANALYTICS"
+  schema: "MARTS"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "DEV_ANALYTICS"
+  schema: "SNAPSHOT"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "DEV_ANALYTICS"
+  schema: "MARTS"
+  role: "DEV_REPORTING_ROLE"
+  privilege: "USAGE"
+
+
+# PROD ENVIRONMENT GRANTS
+# PROD_RAW
+- database: "PROD_RAW"
+  schema: "LANDING"
+  role: "PROD_INGESTION_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "PROD_RAW"
+  schema: "LANDING"
+  role: "PROD_TRANSFORMER_ROLE"
+  privilege: "USAGE"
+
+# PROD_ANALYTICS
+- database: "PROD_ANALYTICS"
+  schema: "STAGE"
+  role: "PROD_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "PROD_ANALYTICS"
+  schema: "INTERMEDIATE"
+  role: "PROD_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "PROD_ANALYTICS"
+  schema: "MARTS"
+  role: "PROD_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "PROD_ANALYTICS"
+  schema: "SNAPSHOT"
+  role: "PROD_TRANSFORMER_ROLE"
+  privilege: "ALL PRIVILEGES"
+
+- database: "PROD_ANALYTICS"
+  schema: "MARTS"
+  role: "PROD_REPORTING_ROLE"
+  privilege: "USAGE"

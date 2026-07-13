@@ -6,6 +6,8 @@
 # fileset() function is a directory scanner. It takes two arguments: a base path and a pattern to match.
 # path.module is a built-in Terraform variable that evaluates to the absolute path of the directory where this current file lives.
 
+# https://registry.terraform.io/providers/snowflakedb/snowflake/latest/docs
+
 #========================================================================
 # PROVIDER CONFIGURATION
 #========================================================================
@@ -38,23 +40,32 @@ locals {
 
   # ---------------------------------------------- Account Parameters -----------------------------------------
   # YAML Parsing Engine for Account Parameters (Decodes directly into a Map)
-  account_parameters = yamldecode(fileexists("${path.module}/configs/account/account_parameter.yaml") ? file("${path.module}/configs/account/account_parameter.yaml") : "{}")
+  account_parameters = yamldecode(fileexists("${path.module}/configs/governance_security/account_parameter.yaml") ? file("${path.module}/configs/governance_security/account_parameter.yaml") : "{}")
 
   # ---------------------------------------------- Network Rules -----------------------------------------
   # YAML Parsing Engine for Network Rules (Decodes into a Map of Objects)
-  network_rules = yamldecode(fileexists("${path.module}/configs/security/network_rules.yaml") ? file("${path.module}/configs/security/network_rules.yaml") : "{}")
+  network_rules = yamldecode(fileexists("${path.module}/configs/governance_security/network_rules.yaml") ? file("${path.module}/configs/governance_security/network_rules.yaml") : "{}")
+
+  # ---------------------------------------------- Network Policies -----------------------------------------
+  network_policies = yamldecode(fileexists("${path.module}/configs/governance_security/network_policies.yaml") ? file("${path.module}/configs/governance_security/network_policies.yaml") : "{}")
 
   # ---------------------------------------------- Roles -----------------------------------------
   # YAML Parsing Engine for Account Roles
-  role_files = fileset(path.module, "configs/roles/*.yaml")
+  role_files = fileset(path.module, "configs/governance_security/roles/*.yaml")
   account_roles = {
     for filename in local.role_files :
     yamldecode(file("${path.module}/${filename}")).name => yamldecode(file("${path.module}/${filename}"))
   }
 
+  # --------------------------------------------- Users ---------------------------------------------------
+  users = yamldecode(fileexists("${path.module}/configs/governance_security/users.yaml") ? file("${path.module}/configs/governance_security/users.yaml") : "{}")
+
+  # ---------------------------------------- User Role Assignments ------------------------------------
+  user_role_assignments = yamldecode(fileexists("${path.module}/configs/governance_security/user_role_assignments.yaml") ? file("${path.module}/configs/governance_security/user_role_assignments.yaml") : "[]")
+
   # ---------------------------------------------- Databases -----------------------------------------
   # YAML Parsing Engine for Databases
-  database_files = fileset(path.module, "configs/databases/*.yaml")
+  database_files = fileset(path.module, "configs/catalog/databases/*.yaml")
   databases = {
     for filename in local.database_files :
     yamldecode(file("${path.module}/${filename}")).name => yamldecode(file("${path.module}/${filename}"))
@@ -63,17 +74,17 @@ locals {
   # ---------------------------------------------- Schemas -----------------------------------------
   # YAML Engine: Schemas
   # The "**/*.yaml" pattern captures both the folder name and the filename
-  schema_files = fileset(path.module, "configs/schemas/**/*.yaml")
+  schema_files = fileset(path.module, "configs/catalog/schemas/**/*.yaml")
   schemas = {
     for filename in local.schema_files :
     # Keep the unique Map tracking key as DATABASE.SCHEMA
-    "${upper(split("/", filename)[2])}.${upper(yamldecode(file("${path.module}/${filename}")).name)}" => {
+    "${upper(split("/", filename)[3])}.${upper(yamldecode(file("${path.module}/${filename}")).name)}" => {
       
       name                        = upper(yamldecode(file("${path.module}/${filename}")).name)
       comment                     = try(yamldecode(file("${path.module}/${filename}")).comment, null)
       data_retention_time_in_days = try(yamldecode(file("${path.module}/${filename}")).data_retention_time_in_days, null)
       with_managed_access         = try(yamldecode(file("${path.module}/${filename}")).with_managed_access, null)
-      database                    = upper(split("/", filename)[2])
+      database                    = upper(split("/", filename)[3])
     }
   }
 
@@ -81,21 +92,21 @@ locals {
   # YAML Parsing Engine for Role Hierarchy 
   # Reads the single hierarchy file and loads it into a native Terraform list
   role_hierarchy = [
-    for grant in yamldecode(fileexists("${path.module}/configs/security/role_hierarchy.yaml") ? file("${path.module}/configs/security/role_hierarchy.yaml") : "[]") :
+    for grant in yamldecode(fileexists("${path.module}/configs/governance_security/role_hierarchy.yaml") ? file("${path.module}/configs/governance_security/role_hierarchy.yaml") : "[]") :
     grant if grant != null
   ]
   # YAML Engine: Database Grants
   database_grants = [
-    for assignment in yamldecode(fileexists("${path.module}/configs/security/database_grants.yaml") ? file("${path.module}/configs/security/database_grants.yaml") : "[]") :
+    for assignment in yamldecode(fileexists("${path.module}/configs/governance_security/database_grants.yaml") ? file("${path.module}/configs/governance_security/database_grants.yaml") : "[]") :
     assignment if assignment != null
   ]
   # YAML Engine: Schema Grants
   schema_grants = [
-    for assignment in yamldecode(fileexists("${path.module}/configs/security/schema_grants.yaml") ? file("${path.module}/configs/security/schema_grants.yaml") : "[]") :
+    for assignment in yamldecode(fileexists("${path.module}/configs/governance_security/schema_grants.yaml") ? file("${path.module}/configs/governance_security/schema_grants.yaml") : "[]") :
     assignment if assignment != null
   ]
   # YAML Engine: Ownership Grants
-  ownership_data = yamldecode(fileexists("${path.module}/configs/security/ownerships.yaml") ? file("${path.module}/configs/security/ownerships.yaml") : "databases: []\nschemas: []") 
+  ownership_data = yamldecode(fileexists("${path.module}/configs/governance_security/ownerships.yaml") ? file("${path.module}/configs/governance_security/ownerships.yaml") : "databases: []\nschemas: []") 
 }
 
 #========================================================================
@@ -125,7 +136,7 @@ provider "snowflake" {
 
 # Aliased Account Admin Provider (Used for account-level operations)
 provider "snowflake" {
-  alias             = "account_admin"
+  alias             = "accountadmin"
   organization_name = local.organization_name
   account_name      = local.account_name
   user              = local.snowflake_user
@@ -164,7 +175,7 @@ provider "snowflake" {
 module "account_parameters" {
   source = "./modules/account"
   providers = {
-    snowflake = snowflake.account_admin
+    snowflake = snowflake.accountadmin
   }
   parameters = local.account_parameters
 }
@@ -206,7 +217,7 @@ module "snowflake_schemas" {
 #------------------------------------------------------------------------
 # SECURITY: ROLE TO ROLE GRANTS
 #------------------------------------------------------------------------
-# Create the Assignments
+# Create Assignments
 module "role_hierarchy" {
   source              = "./modules/security/role_hierarchy"
   role_hierarchy = local.role_hierarchy
@@ -222,7 +233,7 @@ module "role_hierarchy" {
 #------------------------------------------------------------------------
 # SECURITY: Database Grants
 #------------------------------------------------------------------------
-# Module 5: Create Database Entitlements
+# Create Database Entitlements
 module "snowflake_database_grants" {
   source = "./modules/security/database_grants"
   grants = local.database_grants
@@ -251,20 +262,6 @@ module "snowflake_schema_grants" {
   ]
 }
 
-#------------------------------------------------------------------------
-# SECURITY: Ownership Grants
-#------------------------------------------------------------------------
-# Create Ownership Entitlements for Databases
-module "database_ownership" {
-  source              = "./modules/security/ownership/database"
-  database_ownerships = local.ownership_data.databases
-
-  # Execute ownership assignment right after creation
-  depends_on = [
-    module.snowflake_databases
-  ]
-}
-
 # Create Ownership Entitlements for Schemas
 module "schema_ownership" {
   source            = "./modules/security/ownership/schema"
@@ -284,6 +281,70 @@ module "snowflake_network_rules" {
   network_rules = local.network_rules
 
   # Dependency Guardrail: Ensure schemas exist before building rules inside them!
+  depends_on = [
+    module.snowflake_schemas
+  ]
+}
+
+#------------------------------------------------------------------------
+# SECURITY: Network Policies
+#------------------------------------------------------------------------
+module "snowflake_network_policies" {
+  source           = "./modules/security/network_policies"
+  network_policies = local.network_policies
+
+  providers = {
+    snowflake = snowflake.accountadmin
+  }
+  
+  # PASS THE OUTPUT: Feeds the dynamic map down into the policy engine
+  network_rule_fqns = module.snowflake_network_rules.fully_qualified_names
+}
+
+#------------------------------------------------------------------------
+# SECURITY: User Provisioning
+#------------------------------------------------------------------------
+module "snowflake_users" {
+  source = "./modules/governance_security/users"
+  users  = local.users
+
+  providers = {
+    snowflake = snowflake.accountadmin
+  }
+
+  # Strict Dependency: Network Policies must build completely before assignments
+  depends_on = [
+    module.snowflake_network_policies
+  ]
+}
+
+#------------------------------------------------------------------------
+# SECURITY: User Role Assignments
+#------------------------------------------------------------------------
+module "snowflake_user_role_assignments" {
+  source      = "./modules/governance_security/user_role_assignments"
+  assignments = local.user_role_assignments
+
+  providers = {
+    snowflake = snowflake.security
+  }
+
+  # Dependency Guardrail: Make sure users and your roles exist first!
+  depends_on = [
+    module.snowflake_users,
+    module.snowflake_roles # Assumes you have your role provision module named this
+  ]
+}
+
+#------------------------------------------------------------------------
+# SECURITY: Ownership Grants
+#------------------------------------------------------------------------
+# Create Ownership Entitlements for Databases
+module "database_ownership" {
+  source              = "./modules/security/ownership/database"
+  database_ownerships = local.ownership_data.databases
+
+  # Execute ownership assignment right after creation
   depends_on = [
     module.snowflake_schemas
   ]

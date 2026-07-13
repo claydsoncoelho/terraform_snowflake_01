@@ -5,7 +5,7 @@
 # The privileges can include "ALL PRIVILEGES", "USAGE", or other specific privileges as needed.
 
 # DEV ENVIRONMENT GRANTS
-
+# DEV_RAW
 - database: "DEV_RAW"
   role: "DEV_INGESTION_ROLE"
   privilege: "ALL PRIVILEGES"
@@ -14,6 +14,7 @@
   role: "DEV_TRANSFORMER_ROLE"
   privilege: "USAGE"
 
+# DEV_ANALYTICS
 - database: "DEV_ANALYTICS"
   role: "DEV_TRANSFORMER_ROLE"
   privilege: "ALL PRIVILEGES"
@@ -23,7 +24,7 @@
   privilege: "USAGE"
 
 # PROD ENVIRONMENT GRANTS
-
+# PROD_RAW
 - database: "PROD_RAW"
   role: "PROD_INGESTION_ROLE"
   privilege: "ALL PRIVILEGES"
@@ -32,6 +33,7 @@
   role: "PROD_TRANSFORMER_ROLE"
   privilege: "USAGE"
 
+# PROD_ANALYTICS
 - database: "PROD_ANALYTICS"
   role: "PROD_TRANSFORMER_ROLE"
   privilege: "ALL PRIVILEGES"

@@ -1,0 +1,6 @@
+# configs/catalog/databases/platform_data_management.yaml
+
+name: "PLATFORM_DATA_MANAGEMENT"
+comment: "Platform data management database for data governance, data quality, etc."
+is_transient: false
+data_retention_time_in_days: 14
