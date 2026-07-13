@@ -5,7 +5,6 @@
 # The ownerships are used to manage access control and permissions for the databases and schemas in the system.
 
 # DEV ENVIRONMENT OWNERSHIPS
-
 databases:
   - database_name: "DEV_RAW"
     account_role: "DEV_INGESTION_ROLE"
@@ -36,7 +35,6 @@ schemas:
 
 
 # PROD ENVIRONMENT OWNERSHIPS
-
 databases:
   - database_name: "PROD_RAW"
     account_role: "PROD_INGESTION_ROLE"

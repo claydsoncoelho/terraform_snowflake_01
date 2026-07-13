@@ -4,7 +4,6 @@
 # Each entry specifies a role and its parent role, establishing a hierarchy of roles.
 
 # DEV ENVIRONMENT ROLES
-
 - role: "DEV_TRANSFORMER_ROLE"
   parent_role: "SYSADMIN"
 
@@ -15,7 +14,6 @@
   parent_role: "SYSADMIN"
 
 # PROD ENVIRONMENT ROLES
-
 - role: "PROD_TRANSFORMER_ROLE"
   parent_role: "SYSADMIN"
 

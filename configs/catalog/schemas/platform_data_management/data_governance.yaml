@@ -1,0 +1,5 @@
+# configs/schemas/platform_data_management/data_governance.yaml
+
+name: "DATA_GOVERNANCE"
+comment: "This schema is used to store data governance related objects."
+with_managed_access: true
