@@ -1,5 +1,0 @@
-# configs/schemas/prod_analytics/marts.yaml
-
-name: "MARTS"
-comment: "Business-facing reporting layers and data marts (Gold layer)"
-with_managed_access: true

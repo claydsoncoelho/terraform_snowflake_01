@@ -1,5 +1,0 @@
-# configs/schemas/prod_raw/landing.yaml
-
-name: "LANDING"
-comment: "Raw data ingestion layer (Bronze layer)"
-with_managed_access: true

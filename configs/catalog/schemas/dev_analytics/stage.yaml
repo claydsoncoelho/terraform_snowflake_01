@@ -1,5 +1,0 @@
-# configs/schemas/prod_analytics/stage.yaml
-
-name: "STAGE"
-comment: "Raw data landing zone for incoming data"
-with_managed_access: true

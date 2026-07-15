@@ -1,6 +1,0 @@
-# configs/databases/dev_raw.yaml
-
-name: "DEV_RAW"
-comment: "Data Lake Landing Zone."
-is_transient: true
-data_retention_time_in_days: 1

@@ -1,4 +1,0 @@
-# configs/account_roles/dev_transformer_role.yaml
-
-name: "DEV_TRANSFORMER_ROLE"
-comment: "Role for running dbt/data transformation jobs"

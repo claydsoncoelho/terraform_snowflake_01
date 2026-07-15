@@ -50,11 +50,22 @@ locals {
   network_policies = yamldecode(fileexists("${path.module}/configs/governance_security/network_policies.yaml") ? file("${path.module}/configs/governance_security/network_policies.yaml") : "{}")
 
   # ---------------------------------------------- Roles -----------------------------------------
-  # YAML Parsing Engine for Account Roles
+  # 1. Grab all YAML files in the roles folder
   role_files = fileset(path.module, "configs/governance_security/roles/*.yaml")
+
+  # 2. Decode files and flatten the nested lists into a single flat list of roles
+  flat_account_roles = flatten([
+    for filename in local.role_files : [
+      for role in yamldecode(file("${path.module}/${filename}")) : {
+        name    = upper(role.name)
+        comment = try(role.comment, null)
+      }
+    ]
+  ])
+
+  # 3. Project the flat list into a map keyed by ROLE_NAME for your roles module loop
   account_roles = {
-    for filename in local.role_files :
-    yamldecode(file("${path.module}/${filename}")).name => yamldecode(file("${path.module}/${filename}"))
+    for role in local.flat_account_roles : role.name => role
   }
 
   # --------------------------------------------- Users ---------------------------------------------------
@@ -64,28 +75,45 @@ locals {
   user_role_assignments = yamldecode(fileexists("${path.module}/configs/governance_security/user_role_assignments.yaml") ? file("${path.module}/configs/governance_security/user_role_assignments.yaml") : "[]")
 
   # ---------------------------------------------- Databases -----------------------------------------
-  # YAML Parsing Engine for Databases
+  # 1. Grab all YAML files in the databases folder
   database_files = fileset(path.module, "configs/catalog/databases/*.yaml")
+
+  # 2. Decode files and flatten the nested lists into a single flat list of databases
+  flat_databases = flatten([
+    for filename in local.database_files : [
+      for db in yamldecode(file("${path.module}/${filename}")) : {
+        name                        = upper(db.name)
+        comment                     = try(db.comment, null)
+        data_retention_time_in_days = try(db.data_retention_time_in_days, null)
+      }
+    ]
+  ])
+
+  # 3. Project the flat list into a map keyed by DATABASE_NAME for your database module
   databases = {
-    for filename in local.database_files :
-    yamldecode(file("${path.module}/${filename}")).name => yamldecode(file("${path.module}/${filename}"))
+    for db in local.flat_databases : db.name => db
   }
 
   # ---------------------------------------------- Schemas -----------------------------------------
-  # YAML Engine: Schemas
-  # The "**/*.yaml" pattern captures both the folder name and the filename
-  schema_files = fileset(path.module, "configs/catalog/schemas/**/*.yaml")
+  # 1. Grab all YAML files in the schemas folder
+  schema_files = fileset(path.module, "configs/catalog/schemas/*.yaml")
+
+  # 2. Decode files and flatten the nested lists into a single flat list of schemas
+  flat_schemas = flatten([
+    for filename in local.schema_files : [
+      for schema in yamldecode(file("${path.module}/${filename}")) : {
+        database                    = upper(schema.database)
+        name                        = upper(schema.name)
+        comment                     = try(schema.comment, null)
+        data_retention_time_in_days = try(schema.data_retention_time_in_days, null)
+        with_managed_access         = try(schema.with_managed_access, null)
+      }
+    ]
+  ])
+
+  # 3. Project the flat list into a map keyed by "DATABASE.SCHEMA" for the for_each module engine
   schemas = {
-    for filename in local.schema_files :
-    # Keep the unique Map tracking key as DATABASE.SCHEMA
-    "${upper(split("/", filename)[3])}.${upper(yamldecode(file("${path.module}/${filename}")).name)}" => {
-      
-      name                        = upper(yamldecode(file("${path.module}/${filename}")).name)
-      comment                     = try(yamldecode(file("${path.module}/${filename}")).comment, null)
-      data_retention_time_in_days = try(yamldecode(file("${path.module}/${filename}")).data_retention_time_in_days, null)
-      with_managed_access         = try(yamldecode(file("${path.module}/${filename}")).with_managed_access, null)
-      database                    = upper(split("/", filename)[3])
-    }
+    for schema in local.flat_schemas : "${schema.database}.${schema.name}" => schema
   }
 
   # ---------------------------------------------- Security -----------------------------------------
@@ -95,16 +123,38 @@ locals {
     for grant in yamldecode(fileexists("${path.module}/configs/governance_security/role_hierarchy.yaml") ? file("${path.module}/configs/governance_security/role_hierarchy.yaml") : "[]") :
     grant if grant != null
   ]
+
   # YAML Engine: Database Grants
-  database_grants = [
-    for assignment in yamldecode(fileexists("${path.module}/configs/governance_security/database_grants.yaml") ? file("${path.module}/configs/governance_security/database_grants.yaml") : "[]") :
-    assignment if assignment != null
-  ]
+  # 1. Grab all YAML files inside the database_grants directory
+  database_grant_files = fileset(path.module, "configs/governance_security/database_grants/*.yaml")
+
+  # 2. Decode and flatten the lists of grants from all matching files
+  database_grants = flatten([
+    for filename in local.database_grant_files : [
+      for assignment in yamldecode(file("${path.module}/${filename}")) : {
+        database  = upper(assignment.database)
+        role      = upper(assignment.role)
+        privilege = [for priv in assignment.privilege : upper(priv)]
+      }
+    ]
+  ])
+  
   # YAML Engine: Schema Grants
-  schema_grants = [
-    for assignment in yamldecode(fileexists("${path.module}/configs/governance_security/schema_grants.yaml") ? file("${path.module}/configs/governance_security/schema_grants.yaml") : "[]") :
-    assignment if assignment != null
-  ]
+  # 1. Grab all YAML files inside the schema_grants directory
+  schema_grant_files = fileset(path.module, "configs/governance_security/schema_grants/*.yaml")
+
+  # 2. Decode and flatten the lists of grants from all matching files
+  schema_grants = flatten([
+    for filename in local.schema_grant_files : [
+      for assignment in yamldecode(file("${path.module}/${filename}")) : {
+        database  = upper(assignment.database)
+        schema    = upper(assignment.schema)
+        role      = upper(assignment.role)
+        privilege = [for priv in assignment.privilege : upper(priv)]
+      }
+    ]
+  ])
+  
   # YAML Engine: Ownership Grants
   ownership_data = yamldecode(fileexists("${path.module}/configs/governance_security/ownerships.yaml") ? file("${path.module}/configs/governance_security/ownerships.yaml") : "databases: []\nschemas: []") 
 }
@@ -235,7 +285,7 @@ module "role_hierarchy" {
 #------------------------------------------------------------------------
 # Create Database Entitlements
 module "snowflake_database_grants" {
-  source = "./modules/security/database_grants"
+  source = "./modules/governance_security/database_grants"
   grants = local.database_grants
 
   # Essential Guardrails: Databases and Roles must exist entirely 
@@ -251,7 +301,7 @@ module "snowflake_database_grants" {
 #------------------------------------------------------------------------
 # Create Schema Entitlements
 module "snowflake_schema_grants" {
-  source = "./modules/security/schema_grants"
+  source = "./modules/governance_security/schema_grants"
   grants = local.schema_grants
 
   # Crucial Guardrails: Schemas and Roles must be completely 

@@ -1,0 +1,7 @@
+# configs/catalog/schemas/dev_raw_schemas.yaml
+
+- database: "DEV_RAW"
+  name: "LANDING"
+  comment: "Raw data ingestion layer (Bronze layer)"
+  data_retention_time_in_days: 0
+  with_managed_access: true
