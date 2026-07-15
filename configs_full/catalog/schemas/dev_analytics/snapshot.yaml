@@ -1,5 +1,0 @@
-# configs/schemas/prod_analytics/snapshot.yaml
-
-name: "SNAPSHOT"
-comment: "Point-in-time copies of analytical data for historical analysis and reporting."
-with_managed_access: true

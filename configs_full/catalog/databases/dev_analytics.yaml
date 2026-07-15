@@ -1,6 +1,0 @@
-# configs/databases/dev_analytics.yaml
-
-name: "DEV_ANALYTICS"
-comment: "Analytics Data Warehouse."
-is_transient: true
-data_retention_time_in_days: 1
