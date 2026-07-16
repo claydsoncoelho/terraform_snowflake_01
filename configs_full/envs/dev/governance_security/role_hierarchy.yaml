@@ -1,0 +1,24 @@
+# configs/security/role_hierarchy.yaml
+
+# This file defines the role hierarchy for the system.
+# Each entry specifies a role and its parent role, establishing a hierarchy of roles.
+
+# DEV ENVIRONMENT ROLES
+- role: "DEV_TRANSFORMER_ROLE"
+  parent_role: "SYSADMIN"
+
+- role: "DEV_REPORTING_ROLE"
+  parent_role: "SYSADMIN"
+
+- role: "DEV_INGESTION_ROLE"
+  parent_role: "SYSADMIN"
+
+# PROD ENVIRONMENT ROLES
+- role: "PROD_TRANSFORMER_ROLE"
+  parent_role: "SYSADMIN"
+
+- role: "PROD_REPORTING_ROLE"
+  parent_role: "SYSADMIN"
+
+- role: "PROD_INGESTION_ROLE"
+  parent_role: "SYSADMIN"

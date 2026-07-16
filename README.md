@@ -1,3 +1,22 @@
+# Problem
+
+A single, monolithic configuration file introduces challenges:
+
+- Hard to understand, maintain and debug.
+- A minor syntax error breaks the entire deployment pipeline.
+- Prone to merge conflicts on multi-user environments.
+
+![alt text](image.png)
+
+# Solution
+
+Split configurations into multiple modular, environment-scoped YAML files.
+
+- **Zero HCL Syntax**: Purely descriptive YAML files require zero Terraform knowledge.
+- **Modularity**: Clear folder boundaries for environments and configurations.
+- **Easy to Maintain**: Adding a new database, schema, or role is as simple as dropping a new YAML file into a folder.
+
+
 # YAML files for Terraform
 
 ## Account Parameters Configuration

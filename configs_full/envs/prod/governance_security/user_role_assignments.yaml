@@ -1,0 +1,8 @@
+# configs/governance_security/user_role_assignments.yaml
+
+#========================================================================
+# SNOWFLAKE USER ROLE MAPPINGS (MEMBERSHIP)
+#========================================================================
+
+- user: "TRANSFORMER_SVC_USER"
+  role: "DEV_TRANSFORMER_ROLE"
