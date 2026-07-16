@@ -40,18 +40,18 @@ locals {
 
   # ---------------------------------------------- Account Parameters -----------------------------------------
   # YAML Parsing Engine for Account Parameters (Decodes directly into a Map)
-  account_parameters = yamldecode(fileexists("${path.module}/configs/governance_security/account_parameter.yaml") ? file("${path.module}/configs/governance_security/account_parameter.yaml") : "{}")
+  account_parameters = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/account_parameter.yaml") ? file("${path.module}/configs/envs/common/governance_security/account_parameter.yaml") : "{}")
 
   # ---------------------------------------------- Network Rules -----------------------------------------
   # YAML Parsing Engine for Network Rules (Decodes into a Map of Objects)
-  network_rules = yamldecode(fileexists("${path.module}/configs/governance_security/network_rules.yaml") ? file("${path.module}/configs/governance_security/network_rules.yaml") : "{}")
+  network_rules = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/network_rules.yaml") ? file("${path.module}/configs/envs/common/governance_security/network_rules.yaml") : "{}")
 
   # ---------------------------------------------- Network Policies -----------------------------------------
-  network_policies = yamldecode(fileexists("${path.module}/configs/governance_security/network_policies.yaml") ? file("${path.module}/configs/governance_security/network_policies.yaml") : "{}")
+  network_policies = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/network_policies.yaml") ? file("${path.module}/configs/envs/common/governance_security/network_policies.yaml") : "{}")
 
   # ---------------------------------------------- Roles -----------------------------------------
   # 1. Grab all YAML files in the roles folder
-  role_files = fileset(path.module, "configs/governance_security/roles/*.yaml")
+  role_files = fileset(path.module, "configs/envs/common/governance_security/roles/*.yaml")
 
   # 2. Decode files and flatten the nested lists into a single flat list of roles
   flat_account_roles = flatten([
@@ -69,14 +69,14 @@ locals {
   }
 
   # --------------------------------------------- Users ---------------------------------------------------
-  users = yamldecode(fileexists("${path.module}/configs/governance_security/users.yaml") ? file("${path.module}/configs/governance_security/users.yaml") : "{}")
+  users = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/users.yaml") ? file("${path.module}/configs/envs/common/governance_security/users.yaml") : "{}")
 
   # ---------------------------------------- User Role Assignments ------------------------------------
-  user_role_assignments = yamldecode(fileexists("${path.module}/configs/governance_security/user_role_assignments.yaml") ? file("${path.module}/configs/governance_security/user_role_assignments.yaml") : "[]")
+  user_role_assignments = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/user_role_assignments.yaml") ? file("${path.module}/configs/envs/common/governance_security/user_role_assignments.yaml") : "[]")
 
   # ---------------------------------------------- Databases -----------------------------------------
   # 1. Grab all YAML files in the databases folder
-  database_files = fileset(path.module, "configs/catalog/databases/*.yaml")
+  database_files = fileset(path.module, "configs/envs/*/catalog/databases/*.yaml")
 
   # 2. Decode files and flatten the nested lists into a single flat list of databases
   flat_databases = flatten([
@@ -96,7 +96,7 @@ locals {
 
   # ---------------------------------------------- Schemas -----------------------------------------
   # 1. Grab all YAML files in the schemas folder
-  schema_files = fileset(path.module, "configs/catalog/schemas/*.yaml")
+  schema_files = fileset(path.module, "configs/envs/*/catalog/schemas/*.yaml")
 
   # 2. Decode files and flatten the nested lists into a single flat list of schemas
   flat_schemas = flatten([
@@ -120,13 +120,13 @@ locals {
   # YAML Parsing Engine for Role Hierarchy 
   # Reads the single hierarchy file and loads it into a native Terraform list
   role_hierarchy = [
-    for grant in yamldecode(fileexists("${path.module}/configs/governance_security/role_hierarchy.yaml") ? file("${path.module}/configs/governance_security/role_hierarchy.yaml") : "[]") :
+    for grant in yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/role_hierarchy.yaml") ? file("${path.module}/configs/envs/common/governance_security/role_hierarchy.yaml") : "[]") :
     grant if grant != null
   ]
 
   # YAML Engine: Database Grants
   # 1. Grab all YAML files inside the database_grants directory
-  database_grant_files = fileset(path.module, "configs/governance_security/database_grants/*.yaml")
+  database_grant_files = fileset(path.module, "configs/envs/*/governance_security/database_grants/*.yaml")
 
   # 2. Decode and flatten the lists of grants from all matching files
   database_grants = flatten([
@@ -141,7 +141,7 @@ locals {
   
   # YAML Engine: Schema Grants
   # 1. Grab all YAML files inside the schema_grants directory
-  schema_grant_files = fileset(path.module, "configs/governance_security/schema_grants/*.yaml")
+  schema_grant_files = fileset(path.module, "configs/envs/common/governance_security/schema_grants/*.yaml")
 
   # 2. Decode and flatten the lists of grants from all matching files
   schema_grants = flatten([
@@ -156,7 +156,7 @@ locals {
   ])
   
   # YAML Engine: Ownership Grants
-  ownership_data = yamldecode(fileexists("${path.module}/configs/governance_security/ownerships.yaml") ? file("${path.module}/configs/governance_security/ownerships.yaml") : "databases: []\nschemas: []") 
+  ownership_data = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/ownerships.yaml") ? file("${path.module}/configs/envs/common/governance_security/ownerships.yaml") : "databases: []\nschemas: []") 
 }
 
 #========================================================================

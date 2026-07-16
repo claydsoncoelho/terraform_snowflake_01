@@ -1,0 +1,23 @@
+# configs/security/network_policies.yaml
+
+#========================================================================
+# SNOWFLAKE NETWORK POLICIES
+#========================================================================
+# Network policies attach network rules to accounts or specific users
+# They enforce the IP restrictions defined in network rules
+#
+# Policy Scopes:
+# - account = true: Apply to entire Snowflake account (all users)
+# - users = ["USER1", "USER2"]: Apply to specific users only
+#
+# Best Practices:
+# - Start with user-specific policies before account-wide policies
+# - Test policies thoroughly to avoid locking out legitimate users
+# - Maintain emergency break-glass account without network restrictions
+
+GLOBAL_INGRESS_POLICY:
+  comment: "Global corporate and transformation tool ingress firewall"
+  allowed_network_rule_list:
+    - DBT_IP_US_ALLOWED
+    - SPARK_NETWORK_IP_ALLOWED
+  blocked_network_rule_list: []

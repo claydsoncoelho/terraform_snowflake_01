@@ -1,0 +1,38 @@
+# configs/envs/dev/governance_security/database_grants/database_grants.yaml
+
+# DEV ENVIRONMENT GRANTS
+# DEV_RAW
+- database: "DEV_RAW"
+  role: "DEV_INGESTION_ROLE"
+  privilege: 
+    - "USAGE"
+    - "CREATE SCHEMA"
+- database: "DEV_RAW"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: 
+    - "USAGE"
+
+# DEV_ANALYTICS
+- database: "DEV_ANALYTICS"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: 
+    - "USAGE"
+    - "CREATE SCHEMA"
+- database: "DEV_ANALYTICS"
+  role: "DEV_REPORTING_ROLE"
+  privilege: 
+    - "USAGE"
+
+# DEV roles for the PLATFORM_DATA_MANAGEMENT database
+- database: "PLATFORM_DATA_MANAGEMENT"
+  role: "DEV_INGESTION_ROLE"
+  privilege: 
+    - "USAGE"
+- database: "PLATFORM_DATA_MANAGEMENT"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege: 
+    - "USAGE"
+- database: "PLATFORM_DATA_MANAGEMENT"
+  role: "DEV_REPORTING_ROLE"
+  privilege: 
+    - "USAGE"
