@@ -1,10 +1,10 @@
-# configs/governance_security/roles/prod_roles.yaml
+# configs/envs/dev/governance_security/roles/roles.yaml
 
-- name: "PROD_INGESTION_ROLE"
+- name: "DEV_INGESTION_ROLE"
   comment: "Role for data ingestion jobs (e.g. Snowpipe, Streams, Tasks)"
 
-- name: "PROD_TRANSFORMER_ROLE"
+- name: "DEV_TRANSFORMER_ROLE"
   comment: "Role for running dbt/data transformation jobs"
 
-- name: "PROD_REPORTING_ROLE"
+- name: "DEV_REPORTING_ROLE"
   comment: "Role for BI tools and analysts to consume report data"

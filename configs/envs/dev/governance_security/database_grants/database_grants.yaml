@@ -1,5 +1,8 @@
 # configs/envs/dev/governance_security/database_grants/database_grants.yaml
 
+# IMPORTANT: Check if your configuration references objects outside of the current environment. 
+# For example, PLATFORM_DATA_MANAGEMENT.
+
 # DEV ENVIRONMENT GRANTS
 # DEV_RAW
 - database: "DEV_RAW"
