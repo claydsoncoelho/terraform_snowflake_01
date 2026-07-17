@@ -1,0 +1,42 @@
+# configs/envs/common/governance_security/permission_sets.yaml
+
+SCHEMA_READ:
+  schema_privilege:
+    - "USAGE"
+  all_objects:
+    tables: ["SELECT", "REFERENCES"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ"]
+    file_formats: ["USAGE"]
+  future_objects:
+    tables: ["SELECT", "REFERENCES"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ"]
+    file_formats: ["USAGE"]
+
+# Renamed WRITE to READ_WRITE for clarity, matching your blueprint
+SCHEMA_WRITE:
+  schema_privilege:
+    - "USAGE"
+    - "CREATE TABLE"
+    - "CREATE VIEW"
+    - "CREATE STAGE"
+    - "CREATE FILE FORMAT"
+    - "CREATE SEQUENCE"
+    - "CREATE PIPE"
+    - "CREATE TASK"
+    - "CREATE STREAM"
+    - "CREATE FUNCTION"
+    - "CREATE PROCEDURE"
+    - "CREATE MATERIALIZED VIEW"
+    - "CREATE TAG"
+  all_objects:
+    tables: ["SELECT", "REFERENCES", "INSERT", "UPDATE", "DELETE", "TRUNCATE"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ", "WRITE"]
+    file_formats: ["USAGE"]
+  future_objects:
+    tables: ["SELECT", "REFERENCES", "INSERT", "UPDATE", "DELETE", "TRUNCATE"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ", "WRITE"]
+    file_formats: ["USAGE"]

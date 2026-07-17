@@ -1,4 +1,4 @@
-# configs/governance_security/roles/prod_roles.yaml
+# configs/envs/prod/governance_security/roles/roles.yaml
 
 - name: "PROD_INGESTION_ROLE"
   comment: "Role for data ingestion jobs (e.g. Snowpipe, Streams, Tasks)"

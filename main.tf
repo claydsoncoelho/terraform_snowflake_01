@@ -2,10 +2,6 @@
 # Main Terraform configuration file for Snowflake deployment
 # This file orchestrates the creation of all Snowflake resources through modules
 
-# Important Terraform functions used in this file:
-# fileset() function is a directory scanner. It takes two arguments: a base path and a pattern to match.
-# path.module is a built-in Terraform variable that evaluates to the absolute path of the directory where this current file lives.
-
 # https://registry.terraform.io/providers/snowflakedb/snowflake/latest/docs
 
 #========================================================================
@@ -33,25 +29,45 @@ terraform {
 # LOCAL VARIABLES
 #========================================================================
 locals {
-  organization_name          = "egtaggb"
-  account_name               = "ik00397"
+  organization_name          = var.organization_name
+  account_name               = var.account_name
   snowflake_user             = var.snowflake_user
   snowflake_private_key_path = var.snowflake_private_key_path
 
+  #---------------------------------------------- Paths -----------------------------------------
+  permission_sets_path        = "${path.module}/configs/envs/common/governance_security/permission_sets.yaml"
+  account_parameters_path     = "${path.module}/configs/envs/common/governance_security/account_parameter.yaml"
+  network_rules_path          = "${path.module}/configs/envs/common/governance_security/network_rules.yaml"
+  network_policies_path       = "${path.module}/configs/envs/common/governance_security/network_policies.yaml"
+  users_path                  = "${path.module}/configs/envs/common/governance_security/users.yaml"
+  user_role_assignments_path  = "${path.module}/configs/envs/common/governance_security/user_role_assignments.yaml"
+  roles_path                  = "${path.module}/configs/envs/*/governance_security/roles/*.yaml"
+  role_hierarchy_path         = "${path.module}/configs/envs/*/governance_security/role_hierarchy.yaml"
+  databases_path              = "${path.module}/configs/envs/*/catalog/databases/*.yaml"
+  schemas_path                = "${path.module}/configs/envs/*/catalog/schemas/*.yaml"
+  database_grants_path        = "${path.module}/configs/envs/*/governance_security/database_grants/*.yaml"
+  schema_grants_path          = "${path.module}/configs/envs/*/governance_security/schema_grants/*.yaml"
+  ownerships_path             = "${path.module}/configs/envs/*/governance_security/ownerships.yaml"
+  
+  # ---------------------------------------------- Schema Grants -----------------------------------------
+  # Load the single source-of-truth profiles map
+  # Resulting shape: { "SCHEMA_READ" = { schema_privilege = [...], all_objects = {...} }, ... }
+  permission_sets = yamldecode(file(local.permission_sets_path))
+
   # ---------------------------------------------- Account Parameters -----------------------------------------
   # YAML Parsing Engine for Account Parameters (Decodes directly into a Map)
-  account_parameters = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/account_parameter.yaml") ? file("${path.module}/configs/envs/common/governance_security/account_parameter.yaml") : "{}")
+  account_parameters = yamldecode(fileexists(local.account_parameters_path) ? file(local.account_parameters_path) : "{}")
 
   # ---------------------------------------------- Network Rules -----------------------------------------
   # YAML Parsing Engine for Network Rules (Decodes into a Map of Objects)
-  network_rules = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/network_rules.yaml") ? file("${path.module}/configs/envs/common/governance_security/network_rules.yaml") : "{}")
+  network_rules = yamldecode(fileexists(local.network_rules_path) ? file(local.network_rules_path) : "{}")
 
   # ---------------------------------------------- Network Policies -----------------------------------------
-  network_policies = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/network_policies.yaml") ? file("${path.module}/configs/envs/common/governance_security/network_policies.yaml") : "{}")
+  network_policies = yamldecode(fileexists(local.network_policies_path) ? file(local.network_policies_path) : "{}")
 
   # ---------------------------------------------- Roles -----------------------------------------
   # 1. Grab all YAML files in the roles folder
-  role_files = fileset(path.module, "configs/envs/common/governance_security/roles/*.yaml")
+  role_files = fileset(path.module, local.roles_path)
 
   # 2. Decode files and flatten the nested lists into a single flat list of roles
   flat_account_roles = flatten([
@@ -69,14 +85,14 @@ locals {
   }
 
   # --------------------------------------------- Users ---------------------------------------------------
-  users = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/users.yaml") ? file("${path.module}/configs/envs/common/governance_security/users.yaml") : "{}")
+  users = yamldecode(fileexists(local.users_path) ? file(local.users_path) : "{}")
 
   # ---------------------------------------- User Role Assignments ------------------------------------
-  user_role_assignments = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/user_role_assignments.yaml") ? file("${path.module}/configs/envs/common/governance_security/user_role_assignments.yaml") : "[]")
+  user_role_assignments = yamldecode(fileexists(local.user_role_assignments_path) ? file(local.user_role_assignments_path) : "[]")
 
   # ---------------------------------------------- Databases -----------------------------------------
   # 1. Grab all YAML files in the databases folder
-  database_files = fileset(path.module, "configs/envs/*/catalog/databases/*.yaml")
+  database_files = fileset(path.module, local.databases_path)
 
   # 2. Decode files and flatten the nested lists into a single flat list of databases
   flat_databases = flatten([
@@ -96,7 +112,7 @@ locals {
 
   # ---------------------------------------------- Schemas -----------------------------------------
   # 1. Grab all YAML files in the schemas folder
-  schema_files = fileset(path.module, "configs/envs/*/catalog/schemas/*.yaml")
+  schema_files = fileset(path.module, local.schemas_path)
 
   # 2. Decode files and flatten the nested lists into a single flat list of schemas
   flat_schemas = flatten([
@@ -118,15 +134,23 @@ locals {
 
   # ---------------------------------------------- Security -----------------------------------------
   # YAML Parsing Engine for Role Hierarchy 
-  # Reads the single hierarchy file and loads it into a native Terraform list
-  role_hierarchy = [
-    for grant in yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/role_hierarchy.yaml") ? file("${path.module}/configs/envs/common/governance_security/role_hierarchy.yaml") : "[]") :
-    grant if grant != null
-  ]
+  # 1. Dynamically locate any hierarchy files in any environment folder (entirely optional!)
+  role_hierarchy_files = fileset(path.module, local.role_hierarchy_path)
+
+  # 2. Decode and flatten hierarchies across all discovered environments
+  role_hierarchy = flatten([
+    for filename in local.role_hierarchy_files : [
+      for grant in yamldecode(file("${path.module}/${filename}")) : {
+        role        = upper(grant.role)
+        parent_role = upper(grant.parent_role)
+        environment = split("/", filename)[2] # Automatically extracts 'dev', 'test', or 'prod'. Not needed, but useful example of how to parse the filename for metadata.
+      }
+    ]
+  ])
 
   # YAML Engine: Database Grants
   # 1. Grab all YAML files inside the database_grants directory
-  database_grant_files = fileset(path.module, "configs/envs/*/governance_security/database_grants/*.yaml")
+  database_grant_files = fileset(path.module, local.database_grants_path)
 
   # 2. Decode and flatten the lists of grants from all matching files
   database_grants = flatten([
@@ -140,23 +164,63 @@ locals {
   ])
   
   # YAML Engine: Schema Grants
-  # 1. Grab all YAML files inside the schema_grants directory
-  schema_grant_files = fileset(path.module, "configs/envs/common/governance_security/schema_grants/*.yaml")
+  # 1. Parse out environment schema files via fileset
+  schema_grants_files = fileset(path.module, local.schema_grants_path)
+  
+  raw_schema_grants = flatten([
+    for filename in local.schema_grants_files : yamldecode(file("${path.module}/${filename}"))
+  ])
 
-  # 2. Decode and flatten the lists of grants from all matching files
-  schema_grants = flatten([
-    for filename in local.schema_grant_files : [
-      for assignment in yamldecode(file("${path.module}/${filename}")) : {
-        database  = upper(assignment.database)
-        schema    = upper(assignment.schema)
-        role      = upper(assignment.role)
-        privilege = [for priv in assignment.privilege : upper(priv)]
+  # 2. Enrich the environment rules by resolving permission_set strings into complete objects
+  enriched_schema_grants = [
+    for g in local.raw_schema_grants : {
+      database    = g.database
+      schema      = g.schema
+      role        = g.role
+      
+      # Resolve baseline schema privileges from profile
+      schema_privileges = concat(lookup(local.permission_sets[g.permission_set], "schema_privilege", []), lookup(g, "custom_schema_privileges", []))
+      
+      # Merge profile objects with any optional ad-hoc custom definitions
+      all_objects    = merge(lookup(local.permission_sets[g.permission_set], "all_objects", {}), lookup(g, "custom_all_objects", {}))
+      future_objects = merge(lookup(local.permission_sets[g.permission_set], "future_objects", {}), lookup(g, "custom_future_objects", {}))
+    }
+  ]
+  
+  # YAML Engine: Ownership Grants
+  # 1. Dynamically locate any ownerships files in any environment folder (entirely optional!)
+  ownership_files = fileset(path.module, "configs/envs/*/governance_security/ownerships.yaml")
+
+  # 2. Decode the YAML files across all environments
+  decoded_ownerships = [
+    for filename in local.ownership_files : {
+      content     = yamldecode(file("${path.module}/${filename}"))
+      environment = split("/", filename)[2] # Extracts 'dev', 'test', 'prod', etc.
+    }
+  ]
+
+  # 3. Flatten and extract Database Ownerships
+  ownership_databases = flatten([
+    for item in local.decoded_ownerships : [
+      for db in try(item.content.databases, []) : {
+        database_name = upper(db.database_name)
+        account_role  = upper(db.account_role)
+        environment   = item.environment
       }
     ]
   ])
-  
-  # YAML Engine: Ownership Grants
-  ownership_data = yamldecode(fileexists("${path.module}/configs/envs/common/governance_security/ownerships.yaml") ? file("${path.module}/configs/envs/common/governance_security/ownerships.yaml") : "databases: []\nschemas: []") 
+
+  # 4. Flatten and extract Schema Ownerships
+  ownership_schemas = flatten([
+    for item in local.decoded_ownerships : [
+      for schema in try(item.content.schemas, []) : {
+        database_name = upper(schema.database_name)
+        schema_name   = upper(schema.schema_name)
+        account_role  = upper(schema.account_role)
+        environment   = item.environment
+      }
+    ]
+  ])
 }
 
 #========================================================================
@@ -302,24 +366,13 @@ module "snowflake_database_grants" {
 # Create Schema Entitlements
 module "snowflake_schema_grants" {
   source = "./modules/governance_security/schema_grants"
-  grants = local.schema_grants
+  grants = local.enriched_schema_grants
 
   # Crucial Guardrails: Schemas and Roles must be completely 
   # live before attempting to bind privileges between them!
   depends_on = [
     module.schema_ownership,
     module.role_hierarchy
-  ]
-}
-
-# Create Ownership Entitlements for Schemas
-module "schema_ownership" {
-  source            = "./modules/security/ownership/schema"
-  schema_ownerships = local.ownership_data.schemas
-
-  # Execute ownership assignment right after creation
-  depends_on = [
-    module.snowflake_schemas
   ]
 }
 
@@ -392,7 +445,18 @@ module "snowflake_user_role_assignments" {
 # Create Ownership Entitlements for Databases
 module "database_ownership" {
   source              = "./modules/security/ownership/database"
-  database_ownerships = local.ownership_data.databases
+  database_ownerships = local.ownership_databases
+
+  # Execute ownership assignment right after creation
+  depends_on = [
+    module.snowflake_schemas
+  ]
+}
+
+# Create Ownership Entitlements for Schemas
+module "schema_ownership" {
+  source            = "./modules/security/ownership/schema"
+  schema_ownerships = local.ownership_schemas
 
   # Execute ownership assignment right after creation
   depends_on = [

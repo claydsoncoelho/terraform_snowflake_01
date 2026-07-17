@@ -4,5 +4,8 @@
 # SNOWFLAKE USER ROLE MAPPINGS (MEMBERSHIP)
 #========================================================================
 
+# Show grants to users to verify role assignments:
+# SHOW GRANTS TO USER TRANSFORMER_SVC_USER;
+
 - user: "TRANSFORMER_SVC_USER"
   role: "DEV_TRANSFORMER_ROLE"

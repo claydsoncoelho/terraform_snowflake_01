@@ -5,6 +5,26 @@
 # PROVIDER AUTHENTICATION VARIABLES (Secure)
 #------------------------------------------------------------------------
 
+# Snowflake organization name
+# GitHub Actions: Set via repository variable SNOWFLAKE_ORG (visible in logs)
+# Azure DevOps: Set via Variable Group
+# Local: Set via environment variable TF_VAR_organization_name
+variable "organization_name" {
+  description = "Snowflake organization name for Terraform authentication"
+  type        = string
+  sensitive   = false # Changed to false since this is now a variable, not a secret
+}
+
+# Snowflake account name
+# GitHub Actions: Set via repository variable SNOWFLAKE_ACCOUNT (visible in logs)
+# Azure DevOps: Set via Variable Group
+# Local: Set via environment variable TF_VAR_account_name
+variable "account_name" {
+  description = "Snowflake account name for Terraform authentication"
+  type        = string
+  sensitive   = false # Changed to false since this is now a variable, not a secret
+}
+
 # Snowflake service account username
 # GitHub Actions: Set via repository variable SNOWFLAKE_USER (visible in logs)
 # Azure DevOps: Set via Variable Group

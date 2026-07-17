@@ -15,6 +15,15 @@
 # - Test policies thoroughly to avoid locking out legitimate users
 # - Maintain emergency break-glass account without network restrictions
 
+# Query examples to view network rules, policies and assignments:
+# show network rules;
+# show network policies;
+# SELECT * 
+# FROM TABLE(PLATFORM_DATA_MANAGEMENT.INFORMATION_SCHEMA.POLICY_REFERENCES(
+#     POLICY_NAME => 'GLOBAL_INGRESS_POLICY', 
+#     POLICY_KIND => 'NETWORK_POLICY'
+# ));
+
 GLOBAL_INGRESS_POLICY:
   comment: "Global corporate and transformation tool ingress firewall"
   allowed_network_rule_list:
