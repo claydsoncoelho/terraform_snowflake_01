@@ -1,15 +1,26 @@
 # configs/envs/dev/governance_security/database_grants/database_grants.yaml
 
-# DEV ENVIRONMENT GRANTS
+# IMPORTANT: Check if your configuration references objects outside of the current environment. 
+# For example, PLATFORM_DATA_MANAGEMENT.
+
 # DEV_RAW
 - database: "DEV_RAW"
   role: "DEV_INGESTION_ROLE"
   privilege: 
     - "USAGE"
     - "CREATE SCHEMA"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
+    - "USAGE"
+
 - database: "DEV_RAW"
   role: "DEV_TRANSFORMER_ROLE"
   privilege: 
+    - "USAGE"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
     - "USAGE"
 
 # DEV_ANALYTICS
@@ -18,9 +29,18 @@
   privilege: 
     - "USAGE"
     - "CREATE SCHEMA"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
+    - "USAGE"
+
 - database: "DEV_ANALYTICS"
   role: "DEV_REPORTING_ROLE"
   privilege: 
+    - "USAGE"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
     - "USAGE"
 
 # DEV roles for the PLATFORM_DATA_MANAGEMENT database
@@ -28,11 +48,25 @@
   role: "DEV_INGESTION_ROLE"
   privilege: 
     - "USAGE"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
+    - "USAGE"
+    
 - database: "PLATFORM_DATA_MANAGEMENT"
   role: "DEV_TRANSFORMER_ROLE"
   privilege: 
     - "USAGE"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
+    - "USAGE"
+    
 - database: "PLATFORM_DATA_MANAGEMENT"
   role: "DEV_REPORTING_ROLE"
   privilege: 
+    - "USAGE"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
     - "USAGE"

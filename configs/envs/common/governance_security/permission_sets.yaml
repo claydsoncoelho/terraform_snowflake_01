@@ -1,5 +1,6 @@
 # configs/envs/common/governance_security/permission_sets.yaml
 
+# Read-Only Profile: Best suited for consumers, BI tools, and data analysts
 SCHEMA_READ:
   schema_privilege:
     - "USAGE"
@@ -14,7 +15,7 @@ SCHEMA_READ:
     stages: ["USAGE", "READ"]
     file_formats: ["USAGE"]
 
-# Renamed WRITE to READ_WRITE for clarity, matching your blueprint
+# Read-Write Profile: Best suited for ETL/ELT pipelines, ingestion systems, and dbt transformers
 SCHEMA_WRITE:
   schema_privilege:
     - "USAGE"
