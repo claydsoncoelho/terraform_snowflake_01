@@ -42,9 +42,9 @@ Split configurations into multiple modular YAML files.
 | **Account Parameters** | `configs/envs/common/governance_security/account_parameter.yaml` | Common |
 | **Network Rules** | `configs/envs/common/governance_security/network_rules.yaml` | Common |
 | **Network Policies** | `configs/envs/common/governance_security/network_policies.yaml` | Common |
-| **Account Roles** | `configs/envs/*/governance_security/roles/*.yaml` | Env-Specific |
 | **Users** | `configs/envs/common/governance_security/users.yaml` | Common |
 | **User Role Assignments** | `configs/envs/common/governance_security/user_role_assignments.yaml` | Common |
+| **Account Roles** | `configs/envs/*/governance_security/roles/*.yaml` | Env-Specific |
 | **Databases** | `configs/envs/*/catalog/databases/*.yaml` | Env-Specific |
 | **Schemas** | `configs/envs/*/catalog/schemas/*.yaml` | Env-Specific |
 | **Database Grants** | `configs/envs/*/governance_security/database_grants/*.yaml` | Env-Specific |
@@ -54,6 +54,72 @@ Split configurations into multiple modular YAML files.
 
 
 # Configurations
+
+## Permission Sets Configuration
+
+**Location:** configs/envs/common/governance_security/permission_sets.yaml
+
+**Pattern:** Archetype Key-Value Map with Nested Privilege Array Mappings
+
+This file serves as the central "Role-Based Access Control (RBAC) Blueprint" for the entire platform. It defines reusable, standardized access permission profiles (e.g., `SCHEMA_READ`, `SCHEMA_WRITE`). By centralizing privileges here, individual schema configuration files only need to reference a profile key name rather than re-specifying repetitive SQL privilege arrays across multiple environments.
+
+**Objective**: The permission sets defined in this file will be used in `schema_grants.yaml` file.
+
+### Core Structure & Behavior
+
+Each top-level key defines a distinct permission profile archetype containing three core sections:
+
+* `schema_privilege`: A list of direct schema-level privileges (e.g., `USAGE`, `CREATE TABLE`).
+* `all_objects`: A map of object plural names (e.g., `tables`, `views`, `stages`, `file_formats`) to their respective privileges granted on **all existing** objects in the target schema.
+* `future_objects`: A map of object plural names to their respective privileges granted on **all future** objects created in the target schema.
+
+> **Note:** Object type keys use `snake_case` naming (e.g., `file_formats`), which the Terraform engine automatically converts to Snowflake-compliant plural strings (e.g., `FILE FORMATS`).
+
+### YAML Blueprint Example
+
+```yaml
+# Read-Only Profile: Best suited for consumers, BI tools, and data analysts
+SCHEMA_READ:
+  schema_privilege:
+    - "USAGE"
+  all_objects:
+    tables: ["SELECT", "REFERENCES"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ"]
+    file_formats: ["USAGE"]
+  future_objects:
+    tables: ["SELECT", "REFERENCES"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ"]
+    file_formats: ["USAGE"]
+
+# Read-Write Profile: Best suited for ETL/ELT pipelines, ingestion systems, and dbt transformers
+SCHEMA_WRITE:
+  schema_privilege:
+    - "USAGE"
+    - "CREATE TABLE"
+    - "CREATE VIEW"
+    - "CREATE STAGE"
+    - "CREATE FILE FORMAT"
+    - "CREATE SEQUENCE"
+    - "CREATE PIPE"
+    - "CREATE TASK"
+    - "CREATE STREAM"
+    - "CREATE FUNCTION"
+    - "CREATE PROCEDURE"
+    - "CREATE MATERIALIZED VIEW"
+    - "CREATE TAG"
+  all_objects:
+    tables: ["SELECT", "REFERENCES", "INSERT", "UPDATE", "DELETE", "TRUNCATE"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ", "WRITE"]
+    file_formats: ["USAGE"]
+  future_objects:
+    tables: ["SELECT", "REFERENCES", "INSERT", "UPDATE", "DELETE", "TRUNCATE"]
+    views: ["SELECT"]
+    stages: ["USAGE", "READ", "WRITE"]
+    file_formats: ["USAGE"]
+```
 
 ## Account Parameters Configuration
 
@@ -66,7 +132,7 @@ This file contains global, account-wide behavioral and security settings. The ke
 ### Common Parameter Definitions
 Any valid Snowflake account parameter can be added.
 
-### **YAML Blueprint Example**
+### YAML Blueprint Example
 
 YAML
 ```yaml
@@ -110,7 +176,7 @@ Network rules represent reusable groupings of IP addresses, subnets, or domains.
 | value_list | List (String) | **Yes** | Array of IP addresses or subnets (e.g., CIDR notation or raw IPs). | N/A |
 | comment | String | No | Description or source tracking reference. | null |
 
-### **YAML Blueprint Example**
+### YAML Blueprint Example
 
 YAML  
 ```yaml
@@ -154,7 +220,7 @@ Network policies act as active firewalls. They map policy names to lists of **Ne
 | allowed_network_rule_list | List (String) | **Yes** | List of top-level Network Rule names to allow. | N/A |
 | blocked_network_rule_list | List (String) | No | List of top-level Network Rule names to block. | [] |
 
-### **YAML Blueprint Example**
+### YAML Blueprint Example
 
 YAML
 ```yaml
@@ -164,34 +230,6 @@ GLOBAL_INGRESS_POLICY:
     - DBT_IP_US_ALLOWED
     - SPARK_NETWORK_IP_ALLOWED
   blocked_network_rule_list: []
-```
-
----
-
-## Account Roles Configuration
-
-**Location:** configs/envs/\*/governance_security/roles/*.yaml 
-**Pattern:** List of Role Objects
-
-Account roles can now be consolidated into a single master configuration file or split logically across multiple files (e.g., `core_roles.yaml`, `dev_roles.yaml`). The HCL engine automatically gathers all files, flattens the lists, and maps them uniquely by the uppercase `name` value to ensure seamless integration with the underlying module execution graph.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `name` | String | **Yes** | The unique identifier for the Snowflake account role. Dynamically standardized to uppercase. | N/A |
-| `comment` | String | No | Descriptive note explaining the responsibilities or ownership of the role. | `null` |
-
-### YAML Blueprint Example
-```yaml
-- name: "DEV_INGESTION_ROLE"
-  comment: "Role for data ingestion jobs (e.g. Snowpipe, Streams, Tasks)"
-
-- name: "DEV_TRANSFORMER_ROLE"
-  comment: "Role for running dbt/data transformation jobs"
-
-- name: "DEV_REPORTING_ROLE"
-  comment: "Role for BI tools and analysts to consume report data"
 ```
 
 ---
@@ -261,6 +299,34 @@ YAML
 ```yaml
 - user: "TRANSFORMER_SVC_USER"
   role: "DEV_TRANSFORMER_ROLE"
+```
+
+---
+
+## Account Roles Configuration
+
+**Location:** configs/envs/\*/governance_security/roles/*.yaml 
+**Pattern:** List of Role Objects
+
+Account roles can now be consolidated into a single master configuration file or split logically across multiple files (e.g., `core_roles.yaml`, `dev_roles.yaml`). The HCL engine automatically gathers all files, flattens the lists, and maps them uniquely by the uppercase `name` value to ensure seamless integration with the underlying module execution graph.
+
+### Structure Definitions
+
+| Parameter | Type | Required | Description | Default / Fallback |
+| :--- | :--- | :--- | :--- | :--- |
+| `name` | String | **Yes** | The unique identifier for the Snowflake account role. Dynamically standardized to uppercase. | N/A |
+| `comment` | String | No | Descriptive note explaining the responsibilities or ownership of the role. | `null` |
+
+### YAML Blueprint Example
+```yaml
+- name: "DEV_INGESTION_ROLE"
+  comment: "Role for data ingestion jobs (e.g. Snowpipe, Streams, Tasks)"
+
+- name: "DEV_TRANSFORMER_ROLE"
+  comment: "Role for running dbt/data transformation jobs"
+
+- name: "DEV_REPORTING_ROLE"
+  comment: "Role for BI tools and analysts to consume report data"
 ```
 
 ---
@@ -367,23 +433,25 @@ Database grants are stored as a flat list of explicit mappings. Each object bind
 ### YAML Blueprint Example
 
 ```yaml
-# DEV_RAW Grants
+# DEV_RAW
 - database: "DEV_RAW"
   role: "DEV_INGESTION_ROLE"
-  privilege: "ALL PRIVILEGES"
+  privilege: 
+    - "USAGE"
+    - "CREATE SCHEMA"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
+    - "USAGE"
 
 - database: "DEV_RAW"
   role: "DEV_TRANSFORMER_ROLE"
-  privilege: "USAGE"
-
-# DEV_ANALYTICS Grants
-- database: "DEV_ANALYTICS"
-  role: "DEV_TRANSFORMER_ROLE"
-  privilege: "ALL PRIVILEGES"
-
-- database: "DEV_ANALYTICS"
-  role: "DEV_REPORTING_ROLE"
-  privilege: "USAGE"
+  privilege: 
+    - "USAGE"
+  all_schemas:
+    - "USAGE"
+  future_schemas:
+    - "USAGE"
 ```
 
 ---
@@ -411,32 +479,31 @@ Schema grants are stored as a list of explicit mappings that bind target schemas
 - database: "DEV_RAW"
   schema: "LANDING"
   role: "DEV_INGESTION_ROLE"
-  privilege: 
-    - "USAGE"
-    - "CREATE TABLE"
-    - "CREATE VIEW"
-    - "CREATE FILE FORMAT"
-    - "CREATE STAGE"
-    - "CREATE PIPE"
-    - "CREATE SEQUENCE"
-    - "CREATE FUNCTION"
-    - "CREATE PROCEDURE"
-    - "CREATE STREAM"
-    - "CREATE TASK"
-    - "CREATE MATERIALIZED VIEW"
+  permission_set: "SCHEMA_WRITE"
 
 - database: "DEV_RAW"
   schema: "LANDING"
   role: "DEV_TRANSFORMER_ROLE"
-  privilege: 
-    - "USAGE"
+  permission_set: "SCHEMA_READ"
+
+# DEV_ANALYTICS
+- database: "DEV_ANALYTICS"
+  schema: "STAGE"
+  role: "DEV_TRANSFORMER_ROLE"
+  permission_set: "SCHEMA_WRITE"
+
+- database: "DEV_ANALYTICS"
+  schema: "INTERMEDIATE"
+  role: "DEV_TRANSFORMER_ROLE"
+  permission_set: "SCHEMA_WRITE"
 ```
 
 ---
 
 ## Role Hierarchy Configuration
 
-**Location:** `configs/envs/*/governance_security/role_hierarchy.yaml`  
+**Location:** `configs/envs/*/governance_security/role_hierarchy.yaml` 
+
 **Pattern:** List of Role-to-Role Grant Assignment Objects
 
 Role-to-role relationships are stored as a flat list of explicit mappings. In Snowflake's authorization model, granting a child `role` to a `parent_role` allows the `parent_role` to inherit all rights and privileges of the child `role`.
@@ -466,6 +533,7 @@ Role-to-role relationships are stored as a flat list of explicit mappings. In Sn
 ## Ownerships Configuration
 
 **Location:** configs/envs/*/governance_security/ownerships.yaml
+
 **Pattern:** Separated lists for `databases` and `schemas` ownership objects.
 
 The YAML file is structured into two main sections:

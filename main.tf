@@ -156,9 +156,11 @@ locals {
   database_grants = flatten([
     for filename in local.database_grant_files : [
       for assignment in yamldecode(file("${path.module}/${filename}")) : {
-        database  = upper(assignment.database)
-        role      = upper(assignment.role)
-        privilege = [for priv in assignment.privilege : upper(priv)]
+        database       = upper(assignment.database)
+        role           = upper(assignment.role)
+        privilege      = [for priv in try(assignment.privilege, []) : upper(priv)]
+        all_schemas    = [for priv in try(assignment.all_schemas, []) : upper(priv)]
+        future_schemas = [for priv in try(assignment.future_schemas, []) : upper(priv)]
       }
     ]
   ])
