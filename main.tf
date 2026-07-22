@@ -48,6 +48,7 @@ locals {
   database_grants_path        = "${path.module}/configs/envs/*/governance_security/database_grants/*.yaml"
   schema_grants_path          = "${path.module}/configs/envs/*/governance_security/schema_grants/*.yaml"
   ownerships_path             = "${path.module}/configs/envs/*/governance_security/ownerships.yaml"
+  warehouses_path             = "${path.module}/configs/envs/*/compute/warehouses/*.yaml"
   
   # ---------------------------------------------- Schema Grants -----------------------------------------
   # Load the single source-of-truth profiles map
@@ -223,6 +224,30 @@ locals {
       }
     ]
   ])
+
+  # YAML Engine: Warehouses
+  warehouse_files = fileset(path.module, local.warehouses_path)
+
+  flat_warehouses = flatten([
+    for filename in local.warehouse_files : [
+      for wh in yamldecode(file("${path.module}/${filename}")) : {
+        name                                = upper(wh.name)
+        comment                             = try(wh.comment, null)
+        size                                = try(wh.size, "X-SMALL")
+        auto_resume                         = try(wh.auto_resume, true)
+        auto_suspend_seconds                = try(wh.auto_suspend_seconds, 300)
+        max_cluster_count                   = try(wh.max_cluster_count, 1)
+        min_cluster_count                   = try(wh.min_cluster_count, 1)
+        initially_suspended                 = try(wh.initially_suspended, true)
+        enable_query_acceleration           = try(wh.enable_query_acceleration, false)
+        query_acceleration_max_scale_factor = try(wh.query_acceleration_max_scale_factor, 0)
+      }
+    ]
+  ])
+
+  warehouses = {
+    for wh in local.flat_warehouses : wh.name => wh
+  }
 }
 
 #========================================================================
@@ -289,7 +314,7 @@ provider "snowflake" {
 
 # Apply account-level parameters
 module "account_parameters" {
-  source = "./modules/account"
+  source = "./modules/governance_security/account"
   providers = {
     snowflake = snowflake.accountadmin
   }
@@ -301,7 +326,7 @@ module "account_parameters" {
 #------------------------------------------------------------------------
 # Instantiates custom module using the memory-compiled YAML data map
 module "snowflake_roles" {
-  source        = "./modules/roles"
+  source        = "./modules/governance_security/roles"
   account_roles = local.account_roles
   
   providers = {
@@ -314,7 +339,7 @@ module "snowflake_roles" {
 #------------------------------------------------------------------------
 # Create the Databases (SYSADMIN role is used automatically by default)
 module "snowflake_databases" {
-  source    = "./modules/databases"
+  source    = "./modules/catalog/databases"
   databases = local.databases
 }
 
@@ -323,7 +348,7 @@ module "snowflake_databases" {
 #------------------------------------------------------------------------
 # Create the Schemas
 module "snowflake_schemas" {
-  source  = "./modules/schemas"
+  source  = "./modules/catalog/schemas"
   schemas = local.schemas
 
   # Ensures databases exist before Snowflake attempts to create schemas inside them!
@@ -335,7 +360,7 @@ module "snowflake_schemas" {
 #------------------------------------------------------------------------
 # Create Assignments
 module "role_hierarchy" {
-  source              = "./modules/security/role_hierarchy"
+  source              = "./modules/governance_security/role_hierarchy"
   role_hierarchy = local.role_hierarchy
 
   providers = {
@@ -382,7 +407,7 @@ module "snowflake_schema_grants" {
 # SECURITY: Network Rules
 #------------------------------------------------------------------------
 module "snowflake_network_rules" {
-  source        = "./modules/security/network_rules"
+  source        = "./modules/governance_security/network_rules"
   network_rules = local.network_rules
 
   # Dependency Guardrail: Ensure schemas exist before building rules inside them!
@@ -395,7 +420,7 @@ module "snowflake_network_rules" {
 # SECURITY: Network Policies
 #------------------------------------------------------------------------
 module "snowflake_network_policies" {
-  source           = "./modules/security/network_policies"
+  source           = "./modules/governance_security/network_policies"
   network_policies = local.network_policies
 
   providers = {
@@ -446,7 +471,7 @@ module "snowflake_user_role_assignments" {
 #------------------------------------------------------------------------
 # Create Ownership Entitlements for Databases
 module "database_ownership" {
-  source              = "./modules/security/ownership/database"
+  source              = "./modules/governance_security/ownership/database"
   database_ownerships = local.ownership_databases
 
   # Execute ownership assignment right after creation
@@ -457,11 +482,21 @@ module "database_ownership" {
 
 # Create Ownership Entitlements for Schemas
 module "schema_ownership" {
-  source            = "./modules/security/ownership/schema"
+  source            = "./modules/governance_security/ownership/schema"
   schema_ownerships = local.ownership_schemas
 
   # Execute ownership assignment right after creation
   depends_on = [
     module.snowflake_schemas
   ]
+}
+
+#------------------------------------------------------------------------
+# WAREHOUSES
+#------------------------------------------------------------------------
+module "snowflake_warehouses" {
+  source     = "./modules/compute/warehouses"
+  warehouses = local.warehouses
+
+  # Default SYSADMIN provider is used automatically
 }
