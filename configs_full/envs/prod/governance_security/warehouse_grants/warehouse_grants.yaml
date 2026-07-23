@@ -1,0 +1,14 @@
+# configs/envs/prod/governance_security/warehouse_grants/warehouse_grants.yaml
+
+- warehouse: "PROD_WH_INGESTION"
+  role: "PROD_INGESTION_ROLE"
+  privilege:
+    - "USAGE"
+    - "OPERATE"
+
+- warehouse: "PROD_WH_TRANSFORM"
+  role: "PROD_TRANSFORMER_ROLE"
+  privilege:
+    - "USAGE"
+    - "OPERATE"
+    - "MONITOR"

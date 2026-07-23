@@ -1,0 +1,25 @@
+# configs/envs/prod/compute/warehouses.yaml
+
+- name: "PROD_WH_INGESTION"
+  comment: "Compute warehouse for PROD_INGESTION_ROLE"
+  size: "X-SMALL"
+  auto_resume: true
+  auto_suspend_seconds: 600
+  max_cluster_count: 4
+  min_cluster_count: 1
+  initially_suspended: true
+  enable_query_acceleration: true
+  query_acceleration_max_scale_factor: 8
+  resource_monitor: "RM_WH_INGESTION"
+
+- name: "PROD_WH_TRANSFORM"
+  comment: "Compute warehouse for PROD_TRANSFORMER_ROLE"
+  size: "X-SMALL"
+  auto_resume: true
+  auto_suspend_seconds: 300
+  max_cluster_count: 2
+  min_cluster_count: 1
+  initially_suspended: true
+  enable_query_acceleration: false
+  query_acceleration_max_scale_factor: 0
+  resource_monitor: "RM_WH_TRANSFORM"
