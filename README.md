@@ -3,18 +3,21 @@
 2. [Solution](#solution)
 3. [Folder Structure](#folder-structure)
 4. [Configurations](#configurations)
-   * [Account Parameters Configuration](#account-parameters-configuration)
-   * [Network Rules Configuration](#network-rules-configuration)
-   * [Network Policies Configuration](#network-policies-configuration)
-   * [Account Roles Configuration](#account-roles-configuration)
-   * [Users Configuration](#users-configuration)
-   * [User Role Assignments Configuration](#user-role-assignments-configuration)
-   * [Databases Configuration](#databases-configuration)
-   * [Schemas Configuration](#schemas-configuration)
-   * [Database Grants Configuration](#database-grants-configuration)
-   * [Schema Grants Configuration](#schema-grants-configuration)
-   * [Role Hierarchy Configuration](#role-hierarchy-configuration)
-   * [Ownerships Configuration](#ownerships-configuration)
+   * [Permission Sets](#permission-sets)
+   * [Account Parameters](#account-parameters)
+   * [Network Rules](#network-rules)
+   * [Network Policies](#network-policies)
+   * [Account Roles](#account-roles)
+   * [Users](#users)
+   * [User Role Assignments](#user-role-assignments)
+   * [Databases](#databases)
+   * [Schemas](#schemas)
+   * [Database Grants](#database-grants)
+   * [Schema Grants](#schema-grants)
+   * [Role Hierarchy](#role-hierarchy)
+   * [Ownerships](#ownerships)
+   * [Warehouses](#warehouses)
+   * [Warehouse Grants](#warehouse-grants)
 
 # Problem
 
@@ -33,6 +36,8 @@ Split configurations into multiple modular YAML files.
 - **Modularity**: Clear folder boundaries organized per environment.
 - **Easy to Maintain**: Adding a new database, for example, is as simple as dropping a new YAML file into a folder.
 
+# References
+https://docs.snowflake.com/en/user-guide/security-access-control-privileges
 
 # Folder Structure
 
@@ -51,13 +56,14 @@ Split configurations into multiple modular YAML files.
 | **Schema Grants** | `configs/envs/*/governance_security/schema_grants/*.yaml` | Env-Specific |
 | **Role Hierarchy** | `configs/envs/*/governance_security/role_hierarchy.yaml` | Env-Specific |
 | **Ownerships** | `configs/envs/*/governance_security/ownerships.yaml` | Env-Specific |
+| **Warehouses** | `configs/envs/*/compute/warehouses/*.yaml` | Env-Specific |
 
 
 # Configurations
 
-## Permission Sets Configuration
+## Permission Sets
 
-**Location:** configs/envs/common/governance_security/permission_sets.yaml
+**Location:** `configs/envs/common/governance_security/permission_sets.yaml`
 
 **Pattern:** Archetype Key-Value Map with Nested Privilege Array Mappings
 
@@ -121,9 +127,9 @@ SCHEMA_WRITE:
     file_formats: ["USAGE"]
 ```
 
-## Account Parameters Configuration
+## Account Parameters
 
-**Location:** configs/envs/common/governance_security/account_parameter.yaml
+**Location:** `configs/envs/common/governance_security/account_parameter.yaml`
 
 **Pattern:** Key-Value Map
 
@@ -134,7 +140,6 @@ Any valid Snowflake account parameter can be added.
 
 ### YAML Blueprint Example
 
-YAML
 ```yaml
 # Regional & Formatting
 TIMEZONE: "Pacific/Auckland"
@@ -157,9 +162,9 @@ BINARY_OUTPUT_FORMAT: "BASE64"
 
 ---
 
-## Network Rules Configuration
+## Network Rules
 
-**Location:** configs/envs/common/governance_security/network_rules.yaml
+**Location:** `configs/envs/common/governance_security/network_rules.yaml`
 
 **Pattern:** Key-Value Map of Objects
 
@@ -177,8 +182,7 @@ Network rules represent reusable groupings of IP addresses, subnets, or domains.
 | comment | String | No | Description or source tracking reference. | null |
 
 ### YAML Blueprint Example
-
-YAML  
+  
 ```yaml
 DBT_IP_US_ALLOWED:
   database: "PLATFORM_DATA_MANAGEMENT"
@@ -204,9 +208,9 @@ SPARK_NETWORK_IP_ALLOWED:
 
 ---
 
-## Network Policies Configuration
+## Network Policies
 
-**Location:** configs/envs/common/governance_security/network_policies.yaml
+**Location:** `configs/envs/common/governance_security/network_policies.yaml`
 
 **Pattern:** Key-Value Map of Objects
 
@@ -222,7 +226,6 @@ Network policies act as active firewalls. They map policy names to lists of **Ne
 
 ### YAML Blueprint Example
 
-YAML
 ```yaml
 GLOBAL_INGRESS_POLICY:
   comment: "Global corporate and transformation tool ingress firewall"
@@ -234,9 +237,9 @@ GLOBAL_INGRESS_POLICY:
 
 ---
 
-## Users Configuration
+## Users
 
-**Location:** configs/envs/common/governance_security/users.yaml
+**Location:** `configs/envs/common/governance_security/users.yaml`
 
 **Pattern:** Key-Value Map of Objects
 
@@ -258,7 +261,6 @@ Our user provisioning engine is entirely generic. You can specify *any* paramete
 
 ### YAML Blueprint Example
 
-YAML
 ```yaml
 TRANSFORMER_SVC_USER:
   password: "ChangeMe123!"
@@ -278,9 +280,9 @@ TRANSFORMER_SVC_USER:
 
 ---
 
-## User Role Assignments Configuration
+## User Role Assignments
 
-**Location:** configs/envs/common/governance_security/user_role_assignments.yaml
+**Location:** `configs/envs/common/governance_security/user_role_assignments.yaml`
 
 **Pattern:** List of Member-to-Role Assignment Objects
 
@@ -294,8 +296,7 @@ Used to map corporate roles to individual user accounts. To ensure state consist
 | role | String | **Yes** | Target role name to assign. | N/A |
 
 ### YAML Blueprint Example
-
-YAML 
+ 
 ```yaml
 - user: "TRANSFORMER_SVC_USER"
   role: "DEV_TRANSFORMER_ROLE"
@@ -303,9 +304,9 @@ YAML
 
 ---
 
-## Account Roles Configuration
+## Account Roles
 
-**Location:** configs/envs/\*/governance_security/roles/*.yaml 
+**Location:** `configs/envs/*/governance_security/roles/*.yaml`
 **Pattern:** List of Role Objects
 
 Account roles can now be consolidated into a single master configuration file or split logically across multiple files (e.g., `core_roles.yaml`, `dev_roles.yaml`). The HCL engine automatically gathers all files, flattens the lists, and maps them uniquely by the uppercase `name` value to ensure seamless integration with the underlying module execution graph.
@@ -331,9 +332,9 @@ Account roles can now be consolidated into a single master configuration file or
 
 ---
 
-## Databases Configuration
+## Databases
 
-**Location:** configs/envs/\*/catalog/databases/*.yaml
+**Location:** `configs/envs/*/catalog/databases/*.yaml`
 
 **Pattern:** List of Database Objects
 
@@ -349,8 +350,7 @@ You can define all databases in a single file or split them across multiple file
 | is_transient: false | Boolean | No | Transient database | null |
 
 ### YAML Blueprint Example
-
-YAML 
+ 
 ```yaml
 - name: "DEV_RAW"
   comment: "Data Lake Landing Zone."
@@ -365,9 +365,9 @@ YAML
 
 ---
 
-## Schemas Configuration
+## Schemas
 
-**Location:** configs/envs/\*/catalog/schemas/*.yaml
+**Location:** `configs/envs/*/catalog/schemas/*.yaml`
 
 **Pattern:** List of Schema Objects
 
@@ -385,7 +385,6 @@ Schemas are defined in lists and can be grouped in any way you prefer (e.g., all
 
 ### YAML Blueprint Example
 
-YAML
 ```yaml
 - database: "DEV_ANALYTICS"
   name: "STAGE"
@@ -415,7 +414,7 @@ YAML
 ---
 
 
-## Database Grants Configuration
+## Database Grants
 
 **Location:** `configs/envs/*/governance_security/database_grants/*.yaml`  
 **Pattern:** List of Database Grant Assignment Objects
@@ -456,7 +455,7 @@ Database grants are stored as a flat list of explicit mappings. Each object bind
 
 ---
 
-## Schema Grants Configuration
+## Schema Grants
 
 **Location:** `configs/envs/*/governance_security/schema_grants/*.yaml`  
 **Pattern:** List of Schema Grant Assignment Objects
@@ -500,7 +499,7 @@ Schema grants are stored as a list of explicit mappings that bind target schemas
 
 ---
 
-## Role Hierarchy Configuration
+## Role Hierarchy
 
 **Location:** `configs/envs/*/governance_security/role_hierarchy.yaml` 
 
@@ -530,9 +529,9 @@ Role-to-role relationships are stored as a flat list of explicit mappings. In Sn
 
 ---
 
-## Ownerships Configuration
+## Ownerships
 
-**Location:** configs/envs/*/governance_security/ownerships.yaml
+**Location:** `configs/envs/*/governance_security/ownerships.yaml`
 
 **Pattern:** Separated lists for `databases` and `schemas` ownership objects.
 
@@ -585,6 +584,94 @@ schemas:
   - database_name: "DEV_ANALYTICS"
     schema_name: "SNAPSHOT"
     account_role: "DEV_TRANSFORMER_ROLE"
+```
+
+---
+
+## Warehouses
+
+**Location:** `configs/envs/*/compute/warehouses/*.yaml`
+
+**Pattern:** List of Virtual Warehouse Objects.
+
+Virtual warehouses are configured in list format and can be organized across multiple environment folders or dedicated compute domain files. The YAML parsing engine automatically standardizes warehouse names to uppercase and sets secure default values for scaling, query acceleration, and auto-suspension.
+
+### Structure Definitions
+
+| Parameter | Type | Required | Description | Default / Fallback |
+| :--- | :--- | :--- | :--- | :--- |
+| `name` | String | **Yes** | Unique identifier for the virtual warehouse. Standardized to uppercase. | N/A |
+| `comment` | String | No | Purpose or operational context for the virtual warehouse. | `null` |
+| `size` | String | No | Size of the warehouse (`X-SMALL`, `SMALL`, `MEDIUM`, `LARGE`, `X-LARGE`, etc.). | `"X-SMALL"` |
+| `auto_resume` | Boolean | No | Automatically restarts the warehouse when a query is submitted. | `true` |
+| `auto_suspend_seconds` | Integer | No | Inactivity duration (in seconds) before automatically suspending compute nodes. | `300` |
+| `max_cluster_count` | Integer | No | Maximum number of compute clusters for multi-cluster auto-scaling. | `1` |
+| `min_cluster_count` | Integer | No | Minimum number of active clusters. | `1` |
+| `initially_suspended` | Boolean | No | Creates the warehouse in a suspended state to prevent unnecessary credit usage upon creation. | `true` |
+| `enable_query_acceleration` | Boolean | No | Enables Snowflake Query Acceleration Service (QAS) for large scans. | `false` |
+| `query_acceleration_max_scale_factor` | Integer | No | Maximum scale factor (multiplier) allowed for Query Acceleration usage (0 to 100). | `0` |
+
+### YAML Blueprint Example
+
+```yaml
+- name: "DEV_WH_INGESTION"
+  comment: "Compute warehouse for DEV_INGESTION_ROLE"
+  size: "X-SMALL"
+  auto_resume: true
+  auto_suspend_seconds: 600
+  max_cluster_count: 4
+  min_cluster_count: 1
+  initially_suspended: true
+  enable_query_acceleration: true
+  query_acceleration_max_scale_factor: 8
+
+- name: "DEV_WH_TRANSFORM"
+  comment: "Compute warehouse for DEV_TRANSFORMER_ROLE"
+  size: "X-SMALL"
+  auto_resume: true
+  auto_suspend_seconds: 300
+  max_cluster_count: 2
+  min_cluster_count: 1
+  initially_suspended: true
+  enable_query_acceleration: false
+  query_acceleration_max_scale_factor: 0
+```
+
+---
+
+## Warehouse Grants
+
+**Location:** `configs/envs/*/governance_security/warehouse_grants/*.yaml`
+
+**Pattern:** List of Warehouse Grant Assignment Objects
+
+Warehouse grants define access rights (e.g., `USAGE`, `OPERATE`, `MONITOR`) on virtual warehouses for specific account roles. Like schema and database grants, these are defined as a list of explicit mappings to ensure precise Role-Based Access Control (RBAC).
+
+### Structure Definitions
+
+| Parameter | Type | Required | Description | Default / Fallback |
+| :--- | :--- | :--- | :--- | :--- |
+| `warehouse` | String | **Yes** | The target virtual warehouse name. Standardized to uppercase. | N/A |
+| `role` | String | **Yes** | The Snowflake account role receiving the privilege. Standardized to uppercase. | N/A |
+| `privilege` | List (String) | **Yes** | Array of privileges to grant on the warehouse (e.g., `USAGE`, `OPERATE`, `MONITOR`, `ALL PRIVILEGES`). | N/A |
+
+### YAML Blueprint Example
+
+```yaml
+# Ingestion Warehouse Grants
+- warehouse: "WH_INGESTION"
+  role: "DEV_INGESTION_ROLE"
+  privilege:
+    - "USAGE"
+    - "OPERATE"
+
+# Transformation Warehouse Grants
+- warehouse: "WH_TRANSFORM"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege:
+    - "USAGE"
+    - "OPERATE"
+    - "MONITOR"
 ```
 
 ---

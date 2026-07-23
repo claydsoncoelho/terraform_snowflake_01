@@ -49,6 +49,8 @@ locals {
   schema_grants_path          = "${path.module}/configs/envs/*/governance_security/schema_grants/*.yaml"
   ownerships_path             = "${path.module}/configs/envs/*/governance_security/ownerships.yaml"
   warehouses_path             = "${path.module}/configs/envs/*/compute/warehouses/*.yaml"
+  warehouse_grants_path       = "${path.module}/configs/envs/*/governance_security/warehouse_grants/*.yaml"
+  resource_monitors_path      = "${path.module}/configs/envs/*/admin/resource_monitors/*.yaml"
   
   # ---------------------------------------------- Schema Grants -----------------------------------------
   # Load the single source-of-truth profiles map
@@ -241,13 +243,24 @@ locals {
         initially_suspended                 = try(wh.initially_suspended, true)
         enable_query_acceleration           = try(wh.enable_query_acceleration, false)
         query_acceleration_max_scale_factor = try(wh.query_acceleration_max_scale_factor, 0)
+        resource_monitor                    = try(wh.resource_monitor, null)
       }
     ]
   ])
 
-  warehouses = {
-    for wh in local.flat_warehouses : wh.name => wh
-  }
+  # YAML Engine: Warehouses Grants
+  warehouse_grant_files = fileset(path.module, local.warehouse_grants_path)
+
+  warehouse_grants = flatten([
+    for file in local.warehouse_grant_files : yamldecode(file(file))
+  ])
+
+  # YAML Engine: Resource Monitors
+  resource_monitor_files = fileset(path.module, local.resource_monitors_path)
+
+  resource_monitors = flatten([
+    for file in local.resource_monitor_files : yamldecode(file(file))
+  ])
 }
 
 #========================================================================
@@ -319,6 +332,10 @@ module "account_parameters" {
     snowflake = snowflake.accountadmin
   }
   parameters = local.account_parameters
+
+  depends_on = [
+    module.snowflake_resource_monitors
+  ]
 }
 
 #------------------------------------------------------------------------
@@ -492,11 +509,48 @@ module "schema_ownership" {
 }
 
 #------------------------------------------------------------------------
+# RESOURCE MONITORS
+#------------------------------------------------------------------------
+module "snowflake_resource_monitors" {
+  source            = "./modules/admin/resource_monitors"
+  resource_monitors = local.resource_monitors
+
+  providers = {
+    snowflake = snowflake.accountadmin
+  }
+}
+
+#------------------------------------------------------------------------
 # WAREHOUSES
 #------------------------------------------------------------------------
 module "snowflake_warehouses" {
   source     = "./modules/compute/warehouses"
-  warehouses = local.warehouses
+  warehouses = local.flat_warehouses
 
-  # Default SYSADMIN provider is used automatically
+  resource_monitors = module.snowflake_resource_monitors.resource_monitors
+
+  depends_on = [
+    module.snowflake_resource_monitors
+  ]
 }
+
+# ------------------------------------------------------------------------------
+# WAREHOUSES GRANTS
+# ------------------------------------------------------------------------------
+
+# Grant Warehouse Privileges to Roles
+module "snowflake_warehouse_grants" {
+  source           = "./modules/governance_security/warehouse_grants"
+  warehouse_grants = local.warehouse_grants
+
+  providers = {
+    snowflake = snowflake.security
+  }
+
+  # Ensures warehouses are fully created prior to applying privilege grants
+  depends_on = [
+    module.snowflake_warehouses,
+    module.snowflake_roles
+  ]
+}
+

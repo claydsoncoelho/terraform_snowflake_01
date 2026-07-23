@@ -1,0 +1,14 @@
+# configs/envs/dev/governance_security/warehouse_grants/warehouse_grants.yaml
+
+- warehouse: "DEV_WH_INGESTION"
+  role: "DEV_INGESTION_ROLE"
+  privilege:
+    - "USAGE"
+    - "OPERATE"
+
+- warehouse: "DEV_WH_TRANSFORM"
+  role: "DEV_TRANSFORMER_ROLE"
+  privilege:
+    - "USAGE"
+    - "OPERATE"
+    - "MONITOR"
