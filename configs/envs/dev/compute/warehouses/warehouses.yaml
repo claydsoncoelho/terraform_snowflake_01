@@ -10,7 +10,7 @@
   initially_suspended: true
   enable_query_acceleration: true
   query_acceleration_max_scale_factor: 8
-  resource_monitor: "RM_WH_INGESTION"
+  resource_monitor: "DEV_RM_WH_INGESTION"
 
 - name: "DEV_WH_TRANSFORM"
   comment: "Compute warehouse for DEV_TRANSFORMER_ROLE"
@@ -22,4 +22,4 @@
   initially_suspended: true
   enable_query_acceleration: false
   query_acceleration_max_scale_factor: 0
-  resource_monitor: "RM_WH_TRANSFORM"
+  resource_monitor: "DEV_RM_WH_TRANSFORM"
