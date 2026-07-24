@@ -55,7 +55,7 @@ locals {
   # ---------------------------------------------- Schema Grants -----------------------------------------
   # Load the single source-of-truth profiles map
   # Resulting shape: { "SCHEMA_READ" = { schema_privilege = [...], all_objects = {...} }, ... }
-  permission_sets = yamldecode(file(local.permission_sets_path))
+  permission_sets = yamldecode(fileexists(local.permission_sets_path) ? file(local.permission_sets_path) : "{}")
 
   # ---------------------------------------------- Account Parameters -----------------------------------------
   # YAML Parsing Engine for Account Parameters (Decodes directly into a Map)
@@ -137,17 +137,34 @@ locals {
 
   # ---------------------------------------------- Security -----------------------------------------
   # YAML Parsing Engine for Role Hierarchy 
-  # 1. Dynamically locate any hierarchy files in any environment folder (entirely optional!)
+  # 1. Dynamically locate any hierarchy files in any environment folder
   role_hierarchy_files = fileset(path.module, local.role_hierarchy_path)
 
   # 2. Decode and flatten hierarchies across all discovered environments
   role_hierarchy = flatten([
     for filename in local.role_hierarchy_files : [
-      for grant in yamldecode(file("${path.module}/${filename}")) : {
-        role        = upper(grant.role)
-        parent_role = upper(grant.parent_role)
-        environment = split("/", filename)[2] # Automatically extracts 'dev', 'test', or 'prod'. Not needed, but useful example of how to parse the filename for metadata.
-      }
+      for grant in yamldecode(file("${path.module}/${filename}")) : concat(
+        # Handle Account Roles (plural list 'roles' or single string 'role')
+        [
+          for r in try(tolist(grant.roles), try([grant.role], [])) : {
+            role          = upper(r)
+            database_name = null
+            database_role = null
+            parent_role   = upper(grant.parent_role)
+            environment   = split("/", filename)[2]
+          }
+        ],
+        # Handle Database Roles (plural list 'database_roles' or single string 'database_role')
+        [
+          for dbr in try(tolist(grant.database_roles), try([grant.database_role], [])) : {
+            role          = null
+            database_name = upper(grant.database_name)
+            database_role = upper(dbr)
+            parent_role   = upper(grant.parent_role)
+            environment   = split("/", filename)[2]
+          }
+        ]
+      )
     ]
   ])
 
@@ -311,6 +328,7 @@ provider "snowflake" {
 # |       └── snowflake_schema_grants
 # |
 # └── snowflake_databases
+#     ├── role_hierarchy
 #     ├── snowflake_database_grants
 #     |   └── database_ownership
 #     └── snowflake_schemas
@@ -384,8 +402,11 @@ module "role_hierarchy" {
     snowflake = snowflake.security
   }
   
-  # Ensure roles are built entirely before trying to assign them!
-  depends_on = [module.snowflake_roles]
+  # Ensure both Account Roles AND Databases exist before trying to grant role inheritance!
+  depends_on = [
+    module.snowflake_roles,
+    module.snowflake_databases
+  ]
 }
 
 #------------------------------------------------------------------------
@@ -553,4 +574,3 @@ module "snowflake_warehouse_grants" {
     module.snowflake_roles
   ]
 }
-

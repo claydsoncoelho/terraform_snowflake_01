@@ -4,6 +4,7 @@
 3. [Folder Structure](#folder-structure)
 4. [Configurations](#configurations)
    * [Permission Sets](#permission-sets)
+   * [Resource Monitors](#resource-monitors)
    * [Account Parameters](#account-parameters)
    * [Network Rules](#network-rules)
    * [Network Policies](#network-policies)
@@ -44,6 +45,7 @@ https://docs.snowflake.com/en/user-guide/security-access-control-privileges
 | Configuration Item | Path Pattern | Scope |
 | :--- | :--- | :--- |
 | **Permission Sets** | `configs/envs/common/governance_security/permission_sets.yaml` | Common |
+| **Resource Monitors** | `configs/envs/*/admin/resource_monitors/*.yaml` | Common |
 | **Account Parameters** | `configs/envs/common/governance_security/account_parameter.yaml` | Common |
 | **Network Rules** | `configs/envs/common/governance_security/network_rules.yaml` | Common |
 | **Network Policies** | `configs/envs/common/governance_security/network_policies.yaml` | Common |
@@ -158,6 +160,63 @@ CLIENT_ENCRYPTION_KEY_SIZE: 256
 
 # Session Parameter (Applied globally at account level)
 BINARY_OUTPUT_FORMAT: "BASE64"
+```
+
+---
+
+## Resource Monitors
+
+**Location:** `configs/envs/*/admin/resource_monitors/*.yaml`
+
+**Pattern:** Key-Value Map
+
+This module automates the provisioning of Snowflake **Resource Monitors** using Terraform and YAML-based configurations. It supports creating both account-level and warehouse-level monitors dynamically, however, for warehouse-level monitors, the monitor is created here, but the assignment is done in the Warehouse YAML config file.
+
+1. **Resource Monitor Creation:** The module reads `resource_monitors.yaml` and creates `snowflake_resource_monitor` resources for all defined items.
+2. **Account-Level Linking:** Any resource monitor marked with `set_for_account: true` is attached to the Snowflake account using `snowflake_execute` to run `ALTER ACCOUNT SET RESOURCE_MONITOR = <name>`.
+3. **Warehouse-Level Linking:** Resource monitors intended for specific virtual warehouses are attached during warehouse declaration inside the **warehouses** YAML file.
+
+### Structure Definitions
+
+| Attribute | Type | Required | Default | Description |
+| :--- | :--- | :---: | :---: | :--- |
+| `name` | `string` | **Yes** | — | Unique identifier/name for the resource monitor. |
+| `credit_quota` | `number` | **Yes** | — | The number of credits allocated per frequency period. |
+| `frequency` | `string` | No | `"MONTHLY"` | Reset frequency (`MONTHLY`, `DAILY`, `WEEKLY`, `NEVER`). |
+| `start_timestamp` | `string` | No | `"IMMEDIATELY"` | Start time for the quota reset schedule. |
+| `notify_triggers` | `list(number)` | No | `null` | Array of percentage thresholds (e.g., `[50, 75]`) that trigger email alerts. |
+| `suspend_trigger` | `number` | No | `null` | Percentage threshold at which running queries complete, but new queries are blocked. |
+| `suspend_immediate_trigger` | `number` | No | `null` | Percentage threshold at which all active queries and warehouses are cancelled immediately. |
+| `set_for_account` | `bool` | No | `false` | When set to `true`, attaches this monitor to the entire Snowflake account. |
+
+### YAML Blueprint Example
+
+```yaml
+# Account-Level Resource Monitor
+- name: "ACCOUNT_DAILY_MONITOR"
+  credit_quota: 500
+  frequency: "MONTHLY"
+  start_timestamp: "IMMEDIATELY"
+  notify_triggers: [50, 75]
+  suspend_trigger: 90
+  suspend_immediate_trigger: 100
+  set_for_account: true
+
+# Warehouse-Level Resource Monitor - It is created here, but linked to a specific warehouse in the warehouse config file.
+- name: "RM_WH_INGESTION"
+  credit_quota: 100
+  frequency: "MONTHLY"
+  start_timestamp: "IMMEDIATELY"
+  notify_triggers: [70, 85]
+  suspend_trigger: 95
+  suspend_immediate_trigger: 100
+
+- name: "RM_WH_TRANSFORM"
+  credit_quota: 200
+  frequency: "MONTHLY"
+  start_timestamp: "IMMEDIATELY"
+  notify_triggers: [80]
+  suspend_trigger: 100
 ```
 
 ---
@@ -505,26 +564,35 @@ Schema grants are stored as a list of explicit mappings that bind target schemas
 
 **Pattern:** List of Role-to-Role Grant Assignment Objects
 
-Role-to-role relationships are stored as a flat list of explicit mappings. In Snowflake's authorization model, granting a child `role` to a `parent_role` allows the `parent_role` to inherit all rights and privileges of the child `role`.
+Role-to-role relationships are stored as a flat list of explicit mappings. In Snowflake's authorization model, granting a child role (an **Account Role** or a **Database Role**) to a parent_role allows the parent_role to inherit all rights and privileges of that child role.
 
 ### Structure Definitions
 
 | Parameter | Type | Required | Description | Default / Fallback |
 | :--- | :--- | :--- | :--- | :--- |
-| `role` | String | **Yes** | The child role whose privileges are being inherited. Standardized to uppercase. | N/A |
-| `parent_role` | String | **Yes** | The parent role receiving the inheritance. Standardized to uppercase. | N/A |
+| `parent_role` | String | **Yes** | The recipient Account Role receiving the inheritance. Standardized to uppercase. | N/A |
+| `roles` | String | **Yes** | List of child Account Roles being granted to parent_role. Required if granting Account Roles. Standardized to uppercase. | N/A |
+| `database_name` | String | **No** | Name of the database housing the database roles. Required if granting Database Roles. Standardized to uppercase. | `null` |
+| `database_roles` | String | **No** | List of child Database Roles being granted to parent_role. Required if granting Database Roles. | [] |
+
 
 ### YAML Blueprint Example
 
 ```yaml
+# DEV ENVIRONMENT ROLES
+- role: "DEV_INGESTION_ROLE"
+  parent_role: "SYSADMIN"
+
 - role: "DEV_TRANSFORMER_ROLE"
   parent_role: "SYSADMIN"
 
 - role: "DEV_REPORTING_ROLE"
   parent_role: "SYSADMIN"
 
-- role: "DEV_INGESTION_ROLE"
-  parent_role: "SYSADMIN"
+# Database Role to Account Role Hierarchy
+- database_name: "SNOWFLAKE"
+  database_role: "USAGE_VIEWER"
+  parent_role: "DEV_TRANSFORMER_ROLE"
 ```
 
 ---
@@ -610,6 +678,7 @@ Virtual warehouses are configured in list format and can be organized across mul
 | `initially_suspended` | Boolean | No | Creates the warehouse in a suspended state to prevent unnecessary credit usage upon creation. | `true` |
 | `enable_query_acceleration` | Boolean | No | Enables Snowflake Query Acceleration Service (QAS) for large scans. | `false` |
 | `query_acceleration_max_scale_factor` | Integer | No | Maximum scale factor (multiplier) allowed for Query Acceleration usage (0 to 100). | `0` |
+| `resource_monitor` | String | No | Resouce monitor to be linked to this warehouse. | `null` |
 
 ### YAML Blueprint Example
 
@@ -624,6 +693,7 @@ Virtual warehouses are configured in list format and can be organized across mul
   initially_suspended: true
   enable_query_acceleration: true
   query_acceleration_max_scale_factor: 8
+  resource_monitor: "RM_WH_INGESTION"
 
 - name: "DEV_WH_TRANSFORM"
   comment: "Compute warehouse for DEV_TRANSFORMER_ROLE"
@@ -635,6 +705,7 @@ Virtual warehouses are configured in list format and can be organized across mul
   initially_suspended: true
   enable_query_acceleration: false
   query_acceleration_max_scale_factor: 0
+  resource_monitor: "RM_WH_TRANSFORM"
 ```
 
 ---

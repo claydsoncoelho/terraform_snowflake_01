@@ -9,19 +9,3 @@
   suspend_trigger: 90
   suspend_immediate_trigger: 100
   set_for_account: true
-
-# Warehouse-Level Resource Monitor
-- name: "RM_WH_INGESTION"
-  credit_quota: 100
-  frequency: "MONTHLY"
-  start_timestamp: "IMMEDIATELY"
-  notify_triggers: [70, 85]
-  suspend_trigger: 95
-  suspend_immediate_trigger: 100
-
-- name: "RM_WH_TRANSFORM"
-  credit_quota: 200
-  frequency: "MONTHLY"
-  start_timestamp: "IMMEDIATELY"
-  notify_triggers: [80]
-  suspend_trigger: 100

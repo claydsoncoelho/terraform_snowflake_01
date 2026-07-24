@@ -1,0 +1,17 @@
+# configs/envs/prod/admin/resource_monitors/resource_monitors.yaml
+
+# Warehouse-Level Resource Monitor - It is created here, but linked to a specific warehouse in the warehouse config file.
+- name: "PROD_RM_WH_INGESTION"
+  credit_quota: 100
+  frequency: "MONTHLY"
+  start_timestamp: "IMMEDIATELY"
+  notify_triggers: [70, 85]
+  suspend_trigger: 95
+  suspend_immediate_trigger: 100
+
+- name: "PROD_RM_WH_TRANSFORM"
+  credit_quota: 200
+  frequency: "MONTHLY"
+  start_timestamp: "IMMEDIATELY"
+  notify_triggers: [80]
+  suspend_trigger: 100
