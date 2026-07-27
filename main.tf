@@ -16,13 +16,13 @@ terraform {
   }
 
   # Backend configuration for Azure Blob Storage
-  backend "azurerm" {
-    resource_group_name  = "snowflake_learning"
-    storage_account_name = "snowflake4learning"
-    container_name       = "my-container" 
-    key                  = "snowflake.prod.terraform.tfstate"
-    use_azuread_auth     = true
-  }
+  # backend "azurerm" {
+  #   resource_group_name  = "snowflake_learning"
+  #   storage_account_name = "snowflake4learning"
+  #   container_name       = "my-container" 
+  #   key                  = "snowflake.prod.terraform.tfstate"
+  #   use_azuread_auth     = true
+  # }
 }
 
 #========================================================================
@@ -117,16 +117,18 @@ locals {
   # 1. Grab all YAML files in the schemas folder
   schema_files = fileset(path.module, local.schemas_path)
 
-  # 2. Decode files and flatten the nested lists into a single flat list of schemas
+  # 2. Decode files and flatten the nested schemas under each database entry
   flat_schemas = flatten([
     for filename in local.schema_files : [
-      for schema in yamldecode(file("${path.module}/${filename}")) : {
-        database                    = upper(schema.database)
-        name                        = upper(schema.name)
-        comment                     = try(schema.comment, null)
-        data_retention_time_in_days = try(schema.data_retention_time_in_days, null)
-        with_managed_access         = try(schema.with_managed_access, null)
-      }
+      for db_group in yamldecode(file("${path.module}/${filename}")) : [
+        for schema in db_group.schemas : {
+          database                    = upper(db_group.database)
+          name                        = upper(schema.name)
+          comment                     = try(schema.comment, null)
+          data_retention_time_in_days = try(schema.data_retention_time_in_days, null)
+          with_managed_access         = try(schema.with_managed_access, null)
+        }
+      ]
     ]
   ])
 

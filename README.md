@@ -22,10 +22,13 @@
 
 # Problem
 
-A single, monolithic configuration file introduces challenges:
+A single, monolithic configuration file is:
 
 - Hard to understand, maintain and debug.
 - Prone to merge conflicts in multi-user environments.
+
+A single HCL object representing a database with all its schemas, roles, grants, etc... is clever, but:
+- **Mixing different concepts**, like database, schema, grants, environment… in one single object, is intimidating to maintain after 6 months not looking at that code.
 
 ![alt text](image.png)
 
@@ -33,9 +36,15 @@ A single, monolithic configuration file introduces challenges:
 
 Split configurations into multiple modular YAML files.
 
-- **Zero HCL Syntax**: Purely descriptive YAML files that require zero Terraform knowledge.
-- **Modularity**: Clear folder boundaries organized per environment.
-- **Easy to Maintain**: Adding a new database, for example, is as simple as dropping a new YAML file into a folder.
+ - **Modularity**: Clear separation of concerns organized by folders and files. 
+ - **Zero HCL Syntax**: Purely descriptive YAML files that require zero Terraform knowledge.
+ - **Easy to Maintain**: Adding a new database is as simple as dropping a new YAML file into a folder. Ideal for multi-user environments.
+
+# The Future
+
+ - **Automation**: YAML files in separated folders are easier to be generated and validated via scripts.
+ - **AI-Generated/Tested**: We can create AI skills to generate those tiny YAML files, which can latter be easily verified by humans.
+
 
 # References
 https://docs.snowflake.com/en/user-guide/security-access-control-privileges
@@ -428,46 +437,52 @@ You can define all databases in a single file or split them across multiple file
 
 **Location:** `configs/envs/*/catalog/schemas/*.yaml`
 
-**Pattern:** List of Schema Objects
+**Pattern:** List of Database Schema Grouping Objects
 
-Schemas are defined in lists and can be grouped in any way you prefer (e.g., all schemas for a specific database in one file, or split logically). The engine automatically constructs the tracking keys using the format DATABASE.SCHEMA.
+Schemas are organized by grouping a list of `schemas` under their target `database`. The engine automatically constructs internal resource tracking keys using the format `DATABASE.SCHEMA`.
 
 ### Structure Definitions
 
+#### Top-Level Database Group
+
 | Parameter | Type | Required | Description | Default / Fallback |
-| :---- | :---- | :---- | :---- | :---- |
-| database | String | **Yes** | The parent database where this schema will be created. | N/A |
-| name | String | **Yes** | The name of the schema. | N/A |
-| comment | String | No | Description of the schema's purpose. | null |
-| data_retention_time_in_days | Integer | No | Overrides the database's default retention setting. | null |
-| with_managed_access | Boolean | No | Enables managed access schemas (centralized grant control). | null |
+| :--- | :--- | :--- | :--- | :--- |
+| `database` | String | **Yes** | The parent database where the nested schemas will be created. Standardized to uppercase. | N/A |
+| `schemas` | List(Object) | **Yes** | List of schema definitions belonging to the parent database. | N/A |
+
+#### Schema Object (Nested under `schemas`)
+
+| Parameter | Type | Required | Description | Default / Fallback |
+| :--- | :--- | :--- | :--- | :--- |
+| `name` | String | **Yes** | The name of the schema. Standardized to uppercase. | N/A |
+| `comment` | String | No | Description of the schema's purpose. | `null` |
+| `data_retention_time_in_days` | Integer | No | Overrides the database's default retention setting (in days). | `null` |
+| `with_managed_access` | Boolean | No | Enables managed access schema (centralizes privilege grant management to the schema owner). | `null` |
 
 ### YAML Blueprint Example
 
 ```yaml
 - database: "DEV_ANALYTICS"
-  name: "STAGE"
-  comment: "Raw data landing zone for incoming data"
-  data_retention_time_in_days: 0
-  with_managed_access: true
+  schemas:
+    - name: "STAGE"
+      comment: "Raw data landing zone for incoming data"
+      data_retention_time_in_days: 0
+      with_managed_access: true
 
-- database: "DEV_ANALYTICS"
-  name: "INTERMEDIATE"
-  comment: "Transformed data for analytical use."
-  data_retention_time_in_days: 0
-  with_managed_access: true
+    - name: "INTERMEDIATE"
+      comment: "Transformed data for analytical use."
+      data_retention_time_in_days: 0
+      with_managed_access: true
 
-- database: "DEV_ANALYTICS"
-  name: "SNAPSHOT"
-  comment: "Point-in-time copies of analytical data for historical analysis and reporting."
-  data_retention_time_in_days: 0
-  with_managed_access: true
+    - name: "SNAPSHOT"
+      comment: "Point-in-time copies of analytical data for historical analysis and reporting."
+      data_retention_time_in_days: 0
+      with_managed_access: true
 
-- database: "DEV_ANALYTICS"
-  name: "MARTS"
-  comment: "Business-facing reporting layers and data marts (Gold layer)."
-  data_retention_time_in_days: 0
-  with_managed_access: true
+    - name: "MARTS"
+      comment: "Business-facing reporting layers and data marts (Gold layer)."
+      data_retention_time_in_days: 0
+      with_managed_access: true
 ```
 
 ---

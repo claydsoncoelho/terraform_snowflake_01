@@ -51,6 +51,12 @@ ALTER USER TERRAFORM_SVC SET RSA_PUBLIC_KEY = '<public key content>';
 
 ## Preparing the Project to Run
 
+If you wish to attempt automatic migration of the state, use:
+`terraform init -migrate-state`
+
+If you wish to store the current configuration with no changes to the state, use: 
+`terraform init -reconfigure`
+
 ```
 terraform init
 ```
@@ -71,19 +77,4 @@ or
 
 ```
 terraform plan -var-file=variables_values_dev.tfvars
-```
-
-# Directory Structure
-
-```
-├── main.tf                     # Root configuration (calls modules and sets up provider)
-├── variables.tf                # Root input variables
-├── variable_values.tfvars # (Optional) Local variable values (do not commit secrets)
-└── modules/
-    ├── databases/
-    ├── schemas/
-    ├── security/
-    └── roles/              
-        ├── main.tf
-        └── variables.tf
 ```
