@@ -15,7 +15,7 @@ terraform {
     }
   }
 
-  # Backend configuration for Azure Blob Storage
+  #Backend configuration for Azure Blob Storage
   backend "azurerm" {
     resource_group_name  = "snowflake_learning"
     storage_account_name = "snowflake4learning"
@@ -103,6 +103,7 @@ locals {
       for db in yamldecode(file("${path.module}/${filename}")) : {
         name                        = upper(db.name)
         comment                     = try(db.comment, null)
+        is_transient                = try(db.is_transient, false)
         data_retention_time_in_days = try(db.data_retention_time_in_days, null)
       }
     ]
@@ -117,16 +118,18 @@ locals {
   # 1. Grab all YAML files in the schemas folder
   schema_files = fileset(path.module, local.schemas_path)
 
-  # 2. Decode files and flatten the nested lists into a single flat list of schemas
+  # 2. Decode files and flatten the nested schemas under each database entry
   flat_schemas = flatten([
     for filename in local.schema_files : [
-      for schema in yamldecode(file("${path.module}/${filename}")) : {
-        database                    = upper(schema.database)
-        name                        = upper(schema.name)
-        comment                     = try(schema.comment, null)
-        data_retention_time_in_days = try(schema.data_retention_time_in_days, null)
-        with_managed_access         = try(schema.with_managed_access, null)
-      }
+      for db_group in yamldecode(file("${path.module}/${filename}")) : [
+        for schema in db_group.schemas : {
+          database                    = upper(db_group.database)
+          name                        = upper(schema.name)
+          comment                     = try(schema.comment, null)
+          data_retention_time_in_days = try(schema.data_retention_time_in_days, null)
+          with_managed_access         = try(schema.with_managed_access, null)
+        }
+      ]
     ]
   ])
 
@@ -196,9 +199,9 @@ locals {
   # 2. Enrich the environment rules by resolving permission_set strings into complete objects
   enriched_schema_grants = [
     for g in local.raw_schema_grants : {
-      database    = g.database
-      schema      = g.schema
-      role        = g.role
+      database    = upper(g.database)
+      schema      = upper(g.schema)
+      role        = upper(g.role)
       
       # Resolve baseline schema privileges from profile
       schema_privileges = concat(lookup(local.permission_sets[g.permission_set], "schema_privilege", []), lookup(g, "custom_schema_privileges", []))
@@ -211,7 +214,7 @@ locals {
   
   # YAML Engine: Ownership Grants
   # 1. Dynamically locate any ownerships files in any environment folder (entirely optional!)
-  ownership_files = fileset(path.module, "configs/envs/*/governance_security/ownerships.yaml")
+  ownership_files = fileset(path.module, local.ownerships_path)
 
   # 2. Decode the YAML files across all environments
   decoded_ownerships = [
@@ -269,16 +272,35 @@ locals {
   warehouse_grant_files = fileset(path.module, local.warehouse_grants_path)
 
   warehouse_grants = flatten([
-    for file in local.warehouse_grant_files : yamldecode(file(file))
+    for filename in local.warehouse_grant_files : [
+      for grant in yamldecode(file("${path.module}/${filename}")) : {
+        warehouse = upper(grant.warehouse)
+        role      = upper(grant.role)
+        privilege = [for priv in try(grant.privilege, []) : upper(priv)]
+      }
+    ]
   ])
 
   # YAML Engine: Resource Monitors
   resource_monitor_files = fileset(path.module, local.resource_monitors_path)
 
   resource_monitors = flatten([
-    for file in local.resource_monitor_files : yamldecode(file(file))
+    for filename in local.resource_monitor_files : [
+      for rm in yamldecode(file("${path.module}/${filename}")) : {
+        name                      = upper(rm.name)
+        credit_quota              = rm.credit_quota
+        frequency                 = upper(try(rm.frequency, "MONTHLY"))
+        start_timestamp           = try(rm.start_timestamp, "IMMEDIATELY")
+        notify_triggers           = try(rm.notify_triggers, [])
+        suspend_trigger           = try(rm.suspend_trigger, null)
+        suspend_immediate_trigger = try(rm.suspend_immediate_trigger, null)
+        set_for_account           = try(rm.set_for_account, false)
+      }
+    ]
   ])
 }
+
+# End of locals block
 
 #========================================================================
 # SNOWFLAKE PROVIDERS SETUP

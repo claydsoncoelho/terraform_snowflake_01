@@ -1,7 +1,0 @@
-# configs/catalog/schemas/platform_data_management.yaml
-
-- database: "PLATFORM_DATA_MANAGEMENT"
-  name: "DATA_GOVERNANCE"
-  comment: "This schema is used to store data governance related objects."
-  data_retention_time_in_days: 14
-  with_managed_access: true
