@@ -67,6 +67,12 @@ terraform init
 terraform plan
 ```
 
+or 
+
+```
+terraform plan -no-color | grep "will be created" | awk '{print $2}' | cut -d. -f1-2 | sort | uniq -c | sort -rn
+```
+
 ## Execute
 
 ```

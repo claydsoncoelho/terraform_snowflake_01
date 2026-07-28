@@ -1,763 +1,642 @@
-# Table of Contents
-1. [Problem](#problem)
-2. [Solution](#solution)
-3. [Folder Structure](#folder-structure)
-4. [Configurations](#configurations)
-   * [Permission Sets](#permission-sets)
-   * [Resource Monitors](#resource-monitors)
-   * [Account Parameters](#account-parameters)
-   * [Network Rules](#network-rules)
-   * [Network Policies](#network-policies)
-   * [Account Roles](#account-roles)
-   * [Users](#users)
-   * [User Role Assignments](#user-role-assignments)
-   * [Databases](#databases)
-   * [Schemas](#schemas)
-   * [Database Grants](#database-grants)
-   * [Schema Grants](#schema-grants)
-   * [Role Hierarchy](#role-hierarchy)
-   * [Ownerships](#ownerships)
-   * [Warehouses](#warehouses)
-   * [Warehouse Grants](#warehouse-grants)
+# Snowflake Config Validator
 
-# Problem
+A standalone Python tool that checks the YAML configuration files in `configs/` against
+Snowflake and company best practices.
 
-A single, monolithic configuration file is:
+It is **informative, not blocking**. It never edits files, never talks to Snowflake, and
+never prevents a deployment. It reads YAML, prints findings, and exits.
 
-- Hard to understand, maintain and debug.
-- Prone to merge conflicts in multi-user environments.
+---
 
-A single HCL object representing a database with all its schemas, roles, grants, etc... is clever, but:
-- **Mixing different concepts**, like database, schema, grants, environment… in one single object, is intimidating to maintain after 6 months not looking at that code.
+## Table of Contents
 
-![alt text](image.png)
+1. [Why this exists](#why-this-exists)
+2. [How it fits with Terraform](#how-it-fits-with-terraform)
+3. [Project layout](#project-layout)
+4. [What each file does](#what-each-file-does)
+5. [The sixteen config types](#the-sixteen-config-types)
+6. [The environment model](#the-environment-model)
+7. [Built-in objects](#built-in-objects)
+8. [Anatomy of a rule](#anatomy-of-a-rule)
+9. [Rule IDs](#rule-ids)
+10. [Adding a new rule](#adding-a-new-rule)
+11. [Waivers](#waivers)
+12. [Severity and exit codes](#severity-and-exit-codes)
+13. [Output](#output)
+14. [Rules shipped in v1](#rules-shipped-in-v1)
+15. [Requirements](#requirements)
+16. [Decisions log](#decisions-log)
+17. [Deliberately out of scope](#deliberately-out-of-scope)
 
-# Solution
+---
 
-Split configurations into multiple modular YAML files.
+## Why this exists
 
- - **Modularity**: Clear separation of concerns organized by folders and files. 
- - **Zero HCL Syntax**: Purely descriptive YAML files that require zero Terraform knowledge.
- - **Easy to Maintain**: Adding a new database is as simple as dropping a new YAML file into a folder. Ideal for multi-user environments.
+`terraform plan` tells you *what will be deployed*. It cannot tell you whether what you are
+deploying is a good idea.
 
-# The Future
+Terraform will happily create a user with no role attached, a database with no schemas, or an
+account role that nobody can reach because it was never granted to `SYSADMIN`. Every one of
+those is valid HCL and valid Snowflake — and every one of them is a mistake.
 
- - **Automation**: YAML files in separated folders are easier to be generated and validated via scripts.
- - **AI-Generated/Tested**: We can create AI skills to generate those tiny YAML files, which can latter be easily verified by humans.
+This validator is the checklist that catches them. The intended experience:
 
+> Someone adds a new user to `users.yaml` six months from now, runs `make plan`, and sees:
+>
+> ```
+> WARNING  users.must-have-role
+>          Every user must be granted at least one role.
+>
+>   ANALYST_SVC_USER   is not assigned to any role
+>                      configs/envs/common/governance_security/users.yaml
+> ```
 
-# References
-https://docs.snowflake.com/en/user-guide/security-access-control-privileges
+The value of this tool is the message, not the pass/fail. Every finding must name the
+problem, name the file, and be understandable by someone who has never opened this codebase.
 
-# Folder Structure
+### Why not do this in Terraform?
 
-| Configuration Item | Path Pattern | Scope |
-| :--- | :--- | :--- |
-| **Permission Sets** | `configs/envs/common/governance_security/permission_sets.yaml` | Common |
-| **Resource Monitors** | `configs/envs/*/admin/resource_monitors/*.yaml` | Common |
-| **Account Parameters** | `configs/envs/common/governance_security/account_parameter.yaml` | Common |
-| **Network Rules** | `configs/envs/common/governance_security/network_rules.yaml` | Common |
-| **Network Policies** | `configs/envs/common/governance_security/network_policies.yaml` | Common |
-| **Users** | `configs/envs/common/governance_security/users.yaml` | Common |
-| **User Role Assignments** | `configs/envs/common/governance_security/user_role_assignments.yaml` | Common |
-| **Account Roles** | `configs/envs/*/governance_security/roles/*.yaml` | Env-Specific |
-| **Databases** | `configs/envs/*/catalog/databases/*.yaml` | Env-Specific |
-| **Schemas** | `configs/envs/*/catalog/schemas/*.yaml` | Env-Specific |
-| **Database Grants** | `configs/envs/*/governance_security/database_grants/*.yaml` | Env-Specific |
-| **Schema Grants** | `configs/envs/*/governance_security/schema_grants/*.yaml` | Env-Specific |
-| **Role Hierarchy** | `configs/envs/*/governance_security/role_hierarchy.yaml` | Env-Specific |
-| **Ownerships** | `configs/envs/*/governance_security/ownerships.yaml` | Env-Specific |
-| **Warehouses** | `configs/envs/*/compute/warehouses/*.yaml` | Env-Specific |
+Terraform's `check` blocks can produce warnings, and simple rules are expressible in HCL. But
+the rules we actually need are not simple:
 
+- **Transitive checks.** "Every role reaches `SYSADMIN`" is a graph reachability problem — a
+  role may inherit through two or three intermediate roles. HCL has no recursion and no
+  loops, so this cannot be written generically.
+- **Useful messages.** `check` blocks emit one string per block. We want per-item findings
+  that name the offending file.
+- **Authoring cost.** Rules should be easy to write. HCL is not.
 
-# Configurations
+So the validator is plain Python, decoupled from Terraform entirely.
 
-## Permission Sets
+---
 
-**Location:** `configs/envs/common/governance_security/permission_sets.yaml`
+## How it fits with Terraform
 
-**Pattern:** Archetype Key-Value Map with Nested Privilege Array Mappings
+The two programs know nothing about each other. A `Makefile` in the project root runs them in
+sequence:
 
-This file serves as the central "Role-Based Access Control (RBAC) Blueprint" for the entire platform. It defines reusable, standardized access permission profiles (e.g., `SCHEMA_READ`, `SCHEMA_WRITE`). By centralizing privileges here, individual schema configuration files only need to reference a profile key name rather than re-specifying repetitive SQL privilege arrays across multiple environments.
-
-**Objective**: The permission sets defined in this file will be used in `schema_grants.yaml` file.
-
-### Core Structure & Behavior
-
-Each top-level key defines a distinct permission profile archetype containing three core sections:
-
-* `schema_privilege`: A list of direct schema-level privileges (e.g., `USAGE`, `CREATE TABLE`).
-* `all_objects`: A map of object plural names (e.g., `tables`, `views`, `stages`, `file_formats`) to their respective privileges granted on **all existing** objects in the target schema.
-* `future_objects`: A map of object plural names to their respective privileges granted on **all future** objects created in the target schema.
-
-> **Note:** Object type keys use `snake_case` naming (e.g., `file_formats`), which the Terraform engine automatically converts to Snowflake-compliant plural strings (e.g., `FILE FORMATS`).
-
-### YAML Blueprint Example
-
-```yaml
-# Read-Only Profile: Best suited for consumers, BI tools, and data analysts
-SCHEMA_READ:
-  schema_privilege:
-    - "USAGE"
-  all_objects:
-    tables: ["SELECT", "REFERENCES"]
-    views: ["SELECT"]
-    stages: ["USAGE", "READ"]
-    file_formats: ["USAGE"]
-  future_objects:
-    tables: ["SELECT", "REFERENCES"]
-    views: ["SELECT"]
-    stages: ["USAGE", "READ"]
-    file_formats: ["USAGE"]
-
-# Read-Write Profile: Best suited for ETL/ELT pipelines, ingestion systems, and dbt transformers
-SCHEMA_WRITE:
-  schema_privilege:
-    - "USAGE"
-    - "CREATE TABLE"
-    - "CREATE VIEW"
-    - "CREATE STAGE"
-    - "CREATE FILE FORMAT"
-    - "CREATE SEQUENCE"
-    - "CREATE PIPE"
-    - "CREATE TASK"
-    - "CREATE STREAM"
-    - "CREATE FUNCTION"
-    - "CREATE PROCEDURE"
-    - "CREATE MATERIALIZED VIEW"
-    - "CREATE TAG"
-  all_objects:
-    tables: ["SELECT", "REFERENCES", "INSERT", "UPDATE", "DELETE", "TRUNCATE"]
-    views: ["SELECT"]
-    stages: ["USAGE", "READ", "WRITE"]
-    file_formats: ["USAGE"]
-  future_objects:
-    tables: ["SELECT", "REFERENCES", "INSERT", "UPDATE", "DELETE", "TRUNCATE"]
-    views: ["SELECT"]
-    stages: ["USAGE", "READ", "WRITE"]
-    file_formats: ["USAGE"]
+```make
+plan:
+	terraform plan
+	python -m validator.main
 ```
 
-## Account Parameters
+```
+make plan  →  terraform plan  →  validator  →  findings printed below the plan
+```
 
-**Location:** `configs/envs/common/governance_security/account_parameter.yaml`
+You can also run the validator entirely on its own. It needs no credentials, no backend
+access, and no working Terraform — which matters, because a broken `terraform plan` is
+exactly when you most want fast feedback.
 
-**Pattern:** Key-Value Map
+---
 
-This file contains global, account-wide behavioral and security settings. The keys correspond directly to valid Snowflake parameter names, and the values can be strings, integers, or booleans depending on the parameter type.
+## Project layout
 
-### Common Parameter Definitions
-Any valid Snowflake account parameter can be added.
-
-### YAML Blueprint Example
-
-```yaml
-# Regional & Formatting
-TIMEZONE: "Pacific/Auckland"
-WEEK_START: 1
-WEEK_OF_YEAR_POLICY: 1
-
-# Authentication
-ENABLE_IDENTIFIER_FIRST_LOGIN: true
-ALLOW_ID_TOKEN: true
-
-# Security
-REQUIRE_STORAGE_INTEGRATION_FOR_STAGE_CREATION: true
-REQUIRE_STORAGE_INTEGRATION_FOR_STAGE_OPERATION: false
-PREVENT_UNLOAD_TO_INLINE_URL: false
-CLIENT_ENCRYPTION_KEY_SIZE: 256
-
-# Session Parameter (Applied globally at account level)
-BINARY_OUTPUT_FORMAT: "BASE64"
+```
+validator/
+├── README.md            ← you are here
+├── main.py              ← entry point: CLI args, orchestration
+├── loader.py            ← reads YAML files off disk
+├── model.py             ← the in-memory representation of all config
+├── builtins.py          ← Snowflake system-provided object names
+├── registry.py          ← the @rule decorator and rule auto-discovery
+├── reporter.py          ← formats and prints findings
+├── waivers.yaml         ← accepted exceptions
+└── rules/
+    ├── _helpers.py       ← shared logic, skipped by discovery
+    ├── check_account_roles.py
+    ├── check_users.py
+    ├── check_databases.py
+    ├── check_schemas.py
+    ├── check_schema_grants.py
+    ├── check_network_policies.py
+    ├── check_uniqueness.py
+    ├── check_config.py
+    └── check_waivers.py
 ```
 
 ---
 
-## Resource Monitors
+## What each file does
 
-**Location:** `configs/envs/*/admin/resource_monitors/*.yaml`
+### `main.py` — entry point
 
-**Pattern:** Key-Value Map
+Parses command-line arguments, calls the loader, asks the registry for all discovered rules,
+runs each one, applies waivers, and hands the results to the reporter. Deliberately thin: it
+orchestrates, it does not contain logic.
 
-This module automates the provisioning of Snowflake **Resource Monitors** using Terraform and YAML-based configurations. It supports creating both account-level and warehouse-level monitors dynamically, however, for warehouse-level monitors, the monitor is created here, but the assignment is done in the Warehouse YAML config file.
+| Flag | Purpose |
+| :--- | :--- |
+| `--config-dir PATH` | Where `configs/` lives. Defaults to the repo root. |
+| `--list-rules` | Print every registered rule and its description, then exit. |
+| `--strict` | Treat findings as failures (exit non-zero). For CI. |
+| `--rule ID` | Run only the named rule. Useful when developing one. |
+| `--no-color` | Disable colour output. |
 
-1. **Resource Monitor Creation:** The module reads `resource_monitors.yaml` and creates `snowflake_resource_monitor` resources for all defined items.
-2. **Account-Level Linking:** Any resource monitor marked with `set_for_account: true` is attached to the Snowflake account using `snowflake_execute` to run `ALTER ACCOUNT SET RESOURCE_MONITOR = <name>`.
-3. **Warehouse-Level Linking:** Resource monitors intended for specific virtual warehouses are attached during warehouse declaration inside the **warehouses** YAML file.
+`--list-rules` matters more than it looks. Splitting rules across files means you lose the
+ability to scroll one file and see everything; this flag gives that back.
 
-### Structure Definitions
+### `loader.py` — reading the YAML
 
-| Attribute | Type | Required | Default | Description |
-| :--- | :--- | :---: | :---: | :--- |
-| `name` | `string` | **Yes** | — | Unique identifier/name for the resource monitor. |
-| `credit_quota` | `number` | **Yes** | — | The number of credits allocated per frequency period. |
-| `frequency` | `string` | No | `"MONTHLY"` | Reset frequency (`MONTHLY`, `DAILY`, `WEEKLY`, `NEVER`). |
-| `start_timestamp` | `string` | No | `"IMMEDIATELY"` | Start time for the quota reset schedule. |
-| `notify_triggers` | `list(number)` | No | `null` | Array of percentage thresholds (e.g., `[50, 75]`) that trigger email alerts. |
-| `suspend_trigger` | `number` | No | `null` | Percentage threshold at which running queries complete, but new queries are blocked. |
-| `suspend_immediate_trigger` | `number` | No | `null` | Percentage threshold at which all active queries and warehouses are cancelled immediately. |
-| `set_for_account` | `bool` | No | `false` | When set to `true`, attaches this monitor to the entire Snowflake account. |
+Finds and parses every YAML file under `configs/`. This file owns all the mess:
 
-### YAML Blueprint Example
+- The glob patterns, which must mirror the `fileset()` calls in `main.tf`
+- Normalisation — `upper()` on names, so `dev_raw` and `DEV_RAW` compare equal
+- Default values for optional fields
+- Tolerating missing files
+- **The declared field list for each config type**, which drives `config.unknown-field`
+
+Every item it produces is tagged with two things beyond its own fields:
+
+- **`source_file`** — the path it came from, so findings can point at it
+- **`environment`** — `dev`, `test`, `prod`, or `common`
+
+**The loader parses all sixteen config types from day one**, even those with no rules yet.
+This is required for `config.no-orphan-files` and `config.unknown-field` to work, and it means
+adding rules later touches only `rules/`.
+
+#### Parsing quirks the loader must mirror exactly
+
+| Type | Quirk |
+| :--- | :--- |
+| Schemas | **Grouped form** — a `database:` key with a nested `schemas:` list, not a flat list |
+| Role hierarchy | Accepts **both** singular (`role`, `database_role`) and plural (`roles`, `database_roles`) |
+| All names | Normalised to uppercase before comparison, matching `upper()` in `main.tf` |
+| Common-only files | Missing file decodes to empty, not an error |
+
+> ⚠️ **Glob drift.** The patterns here duplicate the ones in `main.tf`. If someone changes a
+> path in Terraform and not here, the validator silently stops checking those files. The
+> `config.no-orphan-files` rule exists to catch exactly this. Keep the Terraform globs listed
+> in a comment block at the top of this file for side-by-side comparison.
+
+### `model.py` — the in-memory representation
+
+Defines the shape of the loaded data: what a Role is, what a User is, what a Schema is. One
+collection per entity type.
+
+Rules read the model and nothing else. They never touch the filesystem and never parse YAML.
+This is what keeps each rule down to a handful of lines.
+
+The model also carries derived structures that many rules need, built once at load time
+rather than recomputed by every rule:
+
+- **The role hierarchy as a graph**, so reachability questions are cheap. Needs a
+  `reaches(child, ancestor)` method that walks transitively and is cycle-safe.
+- **Lookup maps by name**, so "does this role exist?" is not a linear scan.
+
+### `builtins.py` — Snowflake system objects
+
+See [Built-in objects](#built-in-objects). Kept separate from rule code so it can be edited
+as Snowflake adds system roles, without touching any logic.
+
+### `registry.py` — discovery and registration
+
+Two jobs:
+
+1. Provide the `@rule(...)` decorator that rule functions use to declare themselves.
+2. Scan the `rules/` folder at startup, import every module, and collect what registered.
+
+The point of auto-discovery is that **adding a rule requires no central file edit**. Drop a
+file in `rules/`, and it runs. If `main.py` had to import each rule by hand, splitting the
+files would have solved nothing — you would just have moved the bottleneck.
+
+Three safety requirements:
+
+- **Crash on import errors.** A syntax error in one rule file must be loud. The failure mode
+  of auto-discovery is silence — a rule that quietly never runs is worse than no rule.
+- **Reject duplicate rule IDs at startup**, before anything runs.
+- **Isolate rule execution.** A rule that raises at runtime is caught, reported as an `ERROR`
+  attributed to that rule, and the run continues. One broken rule must not hide the findings
+  of the other seventeen.
+
+Files starting with `_` are skipped, which is why shared logic lives in `_helpers.py`.
+
+### `reporter.py` — output
+
+Turns findings into terminal output: grouping, severity labels, colour, and the summary line.
+Isolated here so that adding JSON or SARIF output later is a new function, not a rewrite. See
+[Output](#output).
+
+### `rules/` — the checks
+
+One file per **domain**, not per rule. `check_users.py` holds every user-related rule.
+
+This is the unit that scales. One file per rule would give us a hundred files of identical
+import boilerplate. One file for everything gives us a 3,000-line file and a merge conflict
+every time two people add a rule in the same week. Domain files land in between: roughly a
+dozen files, each obviously named, each short enough to read in full.
+
+`_helpers.py` holds logic shared across domains. The most important is **reference
+resolution** — see [The environment model](#the-environment-model).
+
+---
+
+## The sixteen config types
+
+The loader must discover all sixteen. They come in two shapes, and the difference matters.
+
+### Common-only (6)
+
+Hardcoded paths guarded by `fileexists()`. Environment is always `common`. A missing file
+decodes to empty rather than failing.
+
+| Type | Path |
+| :--- | :--- |
+| Permission Sets | `configs/envs/common/governance_security/permission_sets.yaml` |
+| Account Parameters | `configs/envs/common/governance_security/account_parameter.yaml` |
+| Network Rules | `configs/envs/common/governance_security/network_rules.yaml` |
+| Network Policies | `configs/envs/common/governance_security/network_policies.yaml` |
+| Users | `configs/envs/common/governance_security/users.yaml` |
+| User Role Assignments | `configs/envs/common/governance_security/user_role_assignments.yaml` |
+
+### Glob-based (10)
+
+Discovered by `fileset()`. Environment comes from path segment 2, mirroring
+`split("/", filename)[2]` in `main.tf`. An unmatched glob yields nothing, so no guard is
+needed.
+
+| Type | Path |
+| :--- | :--- |
+| Account Roles | `configs/envs/*/governance_security/roles/*.yaml` |
+| Databases | `configs/envs/*/catalog/databases/*.yaml` |
+| Schemas | `configs/envs/*/catalog/schemas/*.yaml` |
+| Role Hierarchy | `configs/envs/*/governance_security/role_hierarchy.yaml` |
+| Database Grants | `configs/envs/*/governance_security/database_grants/*.yaml` |
+| Schema Grants | `configs/envs/*/governance_security/schema_grants/*.yaml` |
+| Ownerships | `configs/envs/*/governance_security/ownerships.yaml` |
+| Warehouses | `configs/envs/*/compute/warehouses/*.yaml` |
+| Warehouse Grants | `configs/envs/*/governance_security/warehouse_grants/*.yaml` |
+| Resource Monitors | `configs/envs/*/admin/resource_monitors/*.yaml` |
+
+---
+
+## The environment model
+
+The validator runs **globally**: it loads every environment plus `common` in a single pass and
+validates them together. This is what makes cross-environment rules possible.
+
+Environment is derived from the **folder path**, never from the object's name.
+`configs/envs/dev/...` is `dev`, regardless of what the resources inside are called.
+
+### The governing principle
+
+> **Environment folders are sealed. `common` is universal.**
+
+A file in `configs/envs/dev/` may only name objects defined in `dev` or in `common`. A file in
+`common/` may name anything.
+
+| Relationship | Rule |
+| :--- | :--- |
+| Schema → Database | Same environment, or database is in `common` |
+| User → Role | Any environment (users live in `common`, which is universal) |
+| Role hierarchy entries | Sealed — a `dev` role may not appear in `prod`'s hierarchy |
+| Warehouse grants | Sealed |
+| Database and schema grants | Sealed |
+| Network rule → its host database/schema | **Allowed anywhere.** See below. |
+
+Checking against the **file's** environment rather than comparing the two referenced objects
+to each other is the stronger version: it also catches an internally-consistent `prod` grant
+that is sitting in the `dev` folder by mistake.
+
+### Reference resolution
+
+Non-existence and cross-environment violations are two outcomes of the same lookup, so
+`_helpers.py` implements one resolver used by every reference rule:
+
+1. Is the name a [built-in](#built-in-objects)? → OK.
+2. Does the name exist in the referencing file's own environment, or in `common`? → OK.
+3. Does it exist, but in a different environment? → **cross-environment** finding.
+4. Does it not exist at all? → **does not exist** finding.
+
+Each reference relationship gets **one rule ID** covering both failure modes, with the message
+distinguishing them. This keeps waivers simple — one object, one rule, one waiver.
+
+### Network rules are references, not creations
+
+`network_rules.yaml` lives in `common/` but names a `database` and `schema` to store the rule
+object in. That is `common` pointing into an environment, which is the schema→database
+relationship running the other way.
+
+Treat it as a **reference**, not a creation: `common` may point anywhere, so this is allowed.
+The alternative — requiring network rules to live in the environment of their host database —
+contradicts the current folder layout.
+
+### Global uniqueness
+
+Sealed folders catch a mistaken *reference*. They do not catch a mistaken *definition*.
+
+The scenario: someone copies `dev/` to `test/` and forgets to rename an object. `DEV_RAW` is
+now defined in both folders. Environment comes from the path, so the copy registers as a
+legitimate `test` object, and everything referencing it inside `test/` is internally
+consistent. Every rule passes.
+
+Except Snowflake has **one global namespace**. The second `terraform apply` collides with the
+first.
+
+So: account-level objects — databases, account roles, warehouses, users, resource monitors,
+network policies — must be **uniquely named across all environments**. A duplicate is an
+`ERROR`. Schemas are the exception: they are unique per database, so the uniqueness key is
+`DATABASE.SCHEMA`.
+
+This closes the copy-paste failure from both directions.
+
+---
+
+## Built-in objects
+
+Snowflake provides objects that appear in configuration but are defined in no YAML file:
+
+- Account roles: `ACCOUNTADMIN`, `SECURITYADMIN`, `USERADMIN`, `SYSADMIN`, `ORGADMIN`,
+  `PUBLIC`
+- The `SNOWFLAKE` database and its database roles (`USAGE_VIEWER`, `DATA_METRIC_USER`,
+  `OBJECT_VIEWER`, and others)
+
+Without this registry, the sealed-folder rule and every referential-integrity rule would flag
+`SYSADMIN` on the very first run. A tool that cries wolf in its first five minutes gets
+ignored forever.
+
+Builtins **always resolve** and **belong to no environment**, so they are exempt from both
+existence and sealing checks. Snowflake adds database roles over time, so `builtins.py` must
+be editable without touching rule code.
+
+---
+
+## Anatomy of a rule
+
+Every rule is a function that takes the model and produces findings. Auto-discovery only works
+if they are all identical from the outside.
+
+```python
+@rule(
+    id="roles.must-inherit-sysadmin",
+    severity=Severity.WARNING,
+    description="Every custom account role must be reachable from SYSADMIN.",
+)
+def check_roles_reach_sysadmin(model):
+    for role in model.roles:
+        if not model.role_graph.reaches(role.name, "SYSADMIN"):
+            yield Finding(
+                object_name=role.name,
+                message=f"Role '{role.name}' is not granted to SYSADMIN, directly or indirectly.",
+                source_file=role.source_file,
+            )
+```
+
+### The Finding
+
+```python
+@dataclass
+class Finding:
+    object_name: str            # "DEV_REPORTING_ROLE" — machine-readable key
+    message: str                # human-readable sentence
+    source_file: str            # path the problem came from
+    severity: Severity = None   # optional per-finding override
+```
+
+### Contract details
+
+- **Findings do not carry the rule ID or severity.** The runner stamps both from the
+  decorator. Repeating them in each finding means typing them twice, and they will drift.
+- **`object_name` is its own field**, not buried in the message. Waivers key on it, and the
+  reporter sorts by it. Waivers matching against prose would be fragile.
+- **`yield` and `return` both work.** The runner wraps the call in `list(...)`. Yielding per
+  violation is nicer to write — no accumulator variable.
+- **The signature is `(model)` and nothing else.** Waivers are applied by the runner *after*
+  the rule returns, so rules stay ignorant of them, five lines long, and independently
+  testable.
+- **Provenance is file-level.** Findings name the file, not the line. Line numbers would
+  require a custom YAML loader that preserves node positions; `file + object_name` is enough
+  to locate anything. Deferred, not free later — noted so nobody assumes otherwise.
+
+---
+
+## Rule IDs
+
+Format: `domain.kebab-case-description`
+
+```
+roles.must-inherit-sysadmin
+users.must-have-role
+users.network-policy-must-exist
+databases.must-have-schema
+schemas.database-must-exist
+config.unknown-field
+```
+
+The ID appears in every finding, in `--list-rules`, and is the key for waivers. Renaming one
+later breaks anyone who has waived it, so pick carefully the first time.
+
+---
+
+## Adding a new rule
+
+1. Pick the domain file in `rules/`, or create a new `check_<domain>.py` if none fits.
+2. Write a function decorated with `@rule(...)`, giving it an ID, a severity, and a
+   description.
+3. Read what you need from the model. Yield a `Finding` for each violation, naming the object
+   and its source file.
+4. Run `python -m validator.main --rule your.rule-id` to test it in isolation.
+5. Run `--list-rules` to confirm it registered.
+
+No other file needs to change.
+
+---
+
+## Waivers
+
+A waiver says: **"I know. It's intentional. Stop telling me."**
+
+The case it exists for: someone creates `AUDIT_ROLE` and deliberately does *not* grant it to
+`SYSADMIN`, because the point is that SYSADMIN cannot inherit the auditor's access. That is
+correct security design, but the validator does not know it — and would flag it on every run,
+forever.
+
+Without waivers, the options are to live with permanent noise (and everyone starts ignoring
+the output, including the real findings) or to delete the rule (losing the check for all fifty
+other roles). Neither is acceptable.
+
+`validator/waivers.yaml`:
 
 ```yaml
-# Account-Level Resource Monitor
-- name: "ACCOUNT_DAILY_MONITOR"
-  credit_quota: 500
-  frequency: "MONTHLY"
-  start_timestamp: "IMMEDIATELY"
-  notify_triggers: [50, 75]
-  suspend_trigger: 90
-  suspend_immediate_trigger: 100
-  set_for_account: true
+- rule: roles.must-inherit-sysadmin
+  object: AUDIT_ROLE
+  reason: "Deliberately isolated from SYSADMIN for audit segregation."
+  expires: 2027-01-01   # optional
+```
 
-# Warehouse-Level Resource Monitor - It is created here, but linked to a specific warehouse in the warehouse config file.
-- name: "RM_WH_INGESTION"
-  credit_quota: 100
-  frequency: "MONTHLY"
-  start_timestamp: "IMMEDIATELY"
-  notify_triggers: [70, 85]
-  suspend_trigger: 95
-  suspend_immediate_trigger: 100
+| Field | Required | Purpose |
+| :--- | :---: | :--- |
+| `rule` | Yes | Rule ID to suppress |
+| `object` | Yes | Matches `Finding.object_name` exactly |
+| `reason` | Yes | Why this is acceptable. The most valuable field here. |
+| `expires` | No | Date after which the waiver stops working |
 
-- name: "RM_WH_TRANSFORM"
-  credit_quota: 200
-  frequency: "MONTHLY"
-  start_timestamp: "IMMEDIATELY"
-  notify_triggers: [80]
-  suspend_trigger: 100
+**A waiver silences only that exact pairing.** If `AUDIT_ROLE` later breaks a different rule,
+you still get told.
+
+Two self-maintaining behaviours:
+
+- **An expired waiver is itself a finding** (`waivers.expired`, `WARNING`). Without this,
+  "temporary" exceptions become permanent by default.
+- **An unused waiver reports as `INFO`** (`waivers.unused`). If the underlying problem was
+  fixed, the waiver is dead weight — saying so keeps `waivers.yaml` from becoming a graveyard
+  nobody dares to prune.
+
+**The honest downside:** this is a bypass mechanism. Someone can waive a real problem instead
+of fixing it. The mandatory `reason` and the fact that waivers are visible in code review are
+the mitigation. It is a trust tool, not an enforcement one.
+
+The file lives in `validator/`, not `configs/`, because it is validator configuration rather
+than Snowflake configuration — and because `config.no-orphan-files` walks `configs/` and would
+otherwise flag it.
+
+---
+
+## Severity and exit codes
+
+| Severity | Meaning |
+| :--- | :--- |
+| `ERROR` | References something that does not exist, **or deploys something demonstrably wrong.** |
+| `WARNING` | Violates best practice. Deployment will still work. |
+| `INFO` | Advisory. Worth knowing, not worth acting on today. |
+
+Cross-environment violations and global name collisions are `ERROR`. They deploy without
+complaint but put objects in the wrong place, which is what the second clause is for.
+Legitimate exceptions go through waivers rather than being pre-emptively softened into noise.
+
+### Exit codes
+
+| Situation | Default | `--strict` |
+| :--- | :---: | :---: |
+| No findings | 0 | 0 |
+| Findings of any severity | **0** | **non-zero** |
+| A rule crashed | **non-zero** | non-zero |
+
+Findings never block a local run: the validator is informative by design. A rule *crashing* is
+different — that is the validator being broken, not your config, and it must be impossible to
+ignore. It cannot block `terraform apply` anyway, since it runs afterwards.
+
+`--strict` is what CI uses on pull requests, so the same tool serves both a gentle local
+reminder and a hard gate on merge.
+
+---
+
+## Output
+
+Findings are **grouped by rule, ordered by severity** — all `ERROR` rules first, then
+`WARNING`, then `INFO`.
+
+Grouping by rule rather than by file means the explanation is read once and every affected
+object appears beneath it, which is how you actually want to work through a checklist.
+
+Traffic-light colours: **red** for `ERROR`, **amber** for `WARNING`, **green** for `INFO` and
+for the all-clear. Colour is disabled automatically when output is piped or redirected, and by
+`--no-color`.
+
+```
+ERROR  schemas.database-must-be-same-environment
+       A schema must live in a database of its own environment.
+
+  TEST_ANALYTICS.MARTS   database 'DEV_ANALYTICS' belongs to environment 'dev'
+                         configs/envs/test/catalog/schemas/analytics.yaml
+
+WARNING  users.must-have-role
+         Every user must be granted at least one role.
+
+  ANALYST_SVC_USER   is not assigned to any role
+                     configs/envs/common/governance_security/users.yaml
+
+──────────────────────────────────────────────────────
+1 error, 1 warning, 0 info   (2 rules with findings, 16 passed)
 ```
 
 ---
 
-## Network Rules
+## Rules shipped in v1
 
-**Location:** `configs/envs/common/governance_security/network_rules.yaml`
+The loader parses everything; rules cover the domains identified so far. Everything else is a
+later addition to `rules/` alone.
 
-**Pattern:** Key-Value Map of Objects
+| File | Rule ID | Severity |
+| :--- | :--- | :---: |
+| `check_account_roles.py` | `roles.must-inherit-sysadmin` | WARNING |
+| `check_users.py` | `users.must-have-role` | WARNING |
+| | `users.role-must-exist` | ERROR |
+| | `users.must-have-network-policy` | WARNING |
+| | `users.network-policy-must-exist` | ERROR |
+| | `users.default-role-must-exist` | ERROR |
+| | `users.default-warehouse-must-exist` | ERROR |
+| `check_databases.py` | `databases.must-have-schema` | WARNING |
+| `check_schemas.py` | `schemas.database-must-exist` | ERROR |
+| | `schemas.database-must-be-same-environment` | ERROR |
+| `check_schema_grants.py` | `schema-grants.permission-set-must-exist` | ERROR |
+| `check_network_policies.py` | `network-policies.rule-must-exist` | ERROR |
+| | `network-rules.schema-must-exist` | ERROR |
+| `check_uniqueness.py` | `uniqueness.account-objects-must-be-unique` | ERROR |
+| `check_config.py` | `config.no-orphan-files` | WARNING |
+| | `config.unknown-field` | WARNING |
+| `check_waivers.py` | `waivers.expired` | WARNING |
+| | `waivers.unused` | INFO |
 
-Network rules represent reusable groupings of IP addresses, subnets, or domains. The top-level YAML keys are used directly as the Snowflake resource names.
+### Two rules worth explaining
 
-### Structure Definitions
+**`schema-grants.permission-set-must-exist`.** `main.tf` reads
+`local.permission_sets[g.permission_set]` with square-bracket indexing. A typo in a permission
+set name aborts the plan with `Invalid index: The given key does not identify an element in
+this collection value` — and names neither the file nor the grant. Failing hard is the correct
+Terraform behaviour (a silent default would deploy a grant with zero privileges), so the fix
+belongs here: catch the typo first, with a message that says where it is.
 
-| Parameter | Type | Required | Description | Default / Fallback |
-| :---- | :---- | :---- | :---- | :---- |
-| database | String | **Yes** | Database where the rule metadata object is stored. | N/A |
-| schema | String | **Yes** | Schema where the rule metadata object is stored. | N/A |
-| type | String | **Yes** | Network rule type (e.g., IPV4, IPV6, AWS_VPCE_ID). | N/A |
-| mode | String | **Yes** | Action mode (e.g., INGRESS, EGRESS). | N/A |
-| value_list | List (String) | **Yes** | Array of IP addresses or subnets (e.g., CIDR notation or raw IPs). | N/A |
-| comment | String | No | Description or source tracking reference. | null |
+**`config.unknown-field`.** A YAML key that Terraform silently drops is invisible until
+something doesn't work in Snowflake. This was not hypothetical — `is_transient` was documented
+in the Terraform README, used in both of its examples, and never read by `flat_databases`.
+Anyone setting it got a permanent database and no error anywhere. Finding it required a manual
+line-by-line comparison of the README against `main.tf`.
 
-### YAML Blueprint Example
-  
-```yaml
-DBT_IP_US_ALLOWED:
-  database: "PLATFORM_DATA_MANAGEMENT"
-  schema: "DATA_GOVERNANCE"
-  type: "IPV4"
-  mode: "INGRESS"
-  value_list:
-    - "52.22.161.231"
-    - "52.45.144.63"
-    - "54.81.134.249"
-  comment: "DBT (transformation tool) allowed IP addresses"
-
-SPARK_NETWORK_IP_ALLOWED:
-  database: "PLATFORM_DATA_MANAGEMENT"
-  schema: "DATA_GOVERNANCE"
-  type: "IPV4"
-  mode: "INGRESS"
-  value_list:
-    - "219.88.198.160/29" # SparkBYOD MDR
-    - "219.88.198.176/29" # SparkBYOD PAK
-    - "122.57.19.32"      # Local IP retrieved with `curl ifconfig.me` command.
-```
-
----
-
-## Network Policies
-
-**Location:** `configs/envs/common/governance_security/network_policies.yaml`
-
-**Pattern:** Key-Value Map of Objects
-
-Network policies act as active firewalls. They map policy names to lists of **Network Rules** that should be allowed or blocked. Our policy engine resolves these rule names to their dynamic, fully qualified paths automatically.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :---- | :---- | :---- | :---- | :---- |
-| comment | String | No | Description of the policy. | null |
-| allowed_network_rule_list | List (String) | **Yes** | List of top-level Network Rule names to allow. | N/A |
-| blocked_network_rule_list | List (String) | No | List of top-level Network Rule names to block. | [] |
-
-### YAML Blueprint Example
-
-```yaml
-GLOBAL_INGRESS_POLICY:
-  comment: "Global corporate and transformation tool ingress firewall"
-  allowed_network_rule_list:
-    - DBT_IP_US_ALLOWED
-    - SPARK_NETWORK_IP_ALLOWED
-  blocked_network_rule_list: []
-```
+The cost is that `loader.py` must declare which fields each of the sixteen types consumes.
+That declaration is not wasted work: it is the schema the rest of the validator reads against,
+and it doubles as executable documentation of the YAML contract.
 
 ---
 
-## Users
+## Requirements
 
-**Location:** `configs/envs/common/governance_security/users.yaml`
-
-**Pattern:** Key-Value Map of Objects
-
-Our user provisioning engine is entirely generic. You can specify *any* parameter supported by the snowflake_user resource in your YAML block. The module dynamically reads these attributes, allowing you to append metadata fields without needing to adjust the underlying Terraform module.
-
-### Structure Definitions (Common Attributes)
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :---- | :---- | :---- | :---- | :---- |
-| login_name | String | No | Login identifier for the user. | Falls back to the top-level YAML key |
-| comment | String | No | User account description. | null |
-| disabled | Boolean | No | Disables or suspends the user. | false |
-| default_warehouse | String | No | Default virtual warehouse for active queries. | null |
-| default_role | String | No | Default role granted on session initialization. | null |
-| network_policy | String | No | Attaches a Network Policy to enforce restrictions specifically on this user. | null |
-| email | String | No | User contact email address. | null |
-| first_name | String | No | User's first name. | null |
-| last_name | String | No | User's last name. | null |
-
-### YAML Blueprint Example
-
-```yaml
-TRANSFORMER_SVC_USER:
-  password: "ChangeMe123!"
-  login_name: "TRANSFORMER_SVC_USER"
-  display_name: "Transformer Service User"
-  first_name: "Transformer"
-  last_name: "Service User"
-  email: ""
-  must_change_password: false
-  comment: "Service account for transformation pipelines - Restricted Network"
-  disabled: false
-  default_warehouse: "COMPUTE_WH"
-  default_role: "DEV_TRANSFORMER_ROLE"
-  # This explicitly binds custom policy to this user 
-  network_policy: "GLOBAL_INGRESS_POLICY"
-```
+- **Python 3.10+**
+- **PyYAML** — the only third-party dependency. Everything else is standard library.
 
 ---
 
-## User Role Assignments
+## Decisions log
 
-**Location:** `configs/envs/common/governance_security/user_role_assignments.yaml`
+Why things are the way they are, so they are not re-litigated in six months.
 
-**Pattern:** List of Member-to-Role Assignment Objects
-
-Used to map corporate roles to individual user accounts. To ensure state consistency and avoid conflicts, this file behaves purely as a membership assignment registry.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :---- | :---- | :---- | :---- | :---- |
-| user | String | **Yes** | Target username to receive the role. | N/A |
-| role | String | **Yes** | Target role name to assign. | N/A |
-
-### YAML Blueprint Example
- 
-```yaml
-- user: "TRANSFORMER_SVC_USER"
-  role: "DEV_TRANSFORMER_ROLE"
-```
-
----
-
-## Account Roles
-
-**Location:** `configs/envs/*/governance_security/roles/*.yaml`
-**Pattern:** List of Role Objects
-
-Account roles can now be consolidated into a single master configuration file or split logically across multiple files (e.g., `core_roles.yaml`, `dev_roles.yaml`). The HCL engine automatically gathers all files, flattens the lists, and maps them uniquely by the uppercase `name` value to ensure seamless integration with the underlying module execution graph.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `name` | String | **Yes** | The unique identifier for the Snowflake account role. Dynamically standardized to uppercase. | N/A |
-| `comment` | String | No | Descriptive note explaining the responsibilities or ownership of the role. | `null` |
-
-### YAML Blueprint Example
-```yaml
-- name: "DEV_INGESTION_ROLE"
-  comment: "Role for data ingestion jobs (e.g. Snowpipe, Streams, Tasks)"
-
-- name: "DEV_TRANSFORMER_ROLE"
-  comment: "Role for running dbt/data transformation jobs"
-
-- name: "DEV_REPORTING_ROLE"
-  comment: "Role for BI tools and analysts to consume report data"
-```
+| Decision | Rationale |
+| :--- | :--- |
+| Python, not Terraform `check` blocks | Transitive role reachability is impossible in HCL; messages are better |
+| Validator does not invoke `terraform` | Keeps it credential-free, fast, and usable when `terraform plan` is broken |
+| Global run, all environments at once | Required for cross-environment and uniqueness rules |
+| Environment from folder path, not name | Naming conventions vary per client; the path is unambiguous |
+| Sealed folders, universal `common` | One principle covering every cross-environment relationship |
+| Global uniqueness rule | Sealing catches bad references; only uniqueness catches a duplicated *definition* |
+| No naming-convention rule | Client-specific (`PRD` vs `PROD`, prefix vs suffix). A rabbit hole with no correct default. |
+| Domain files, not one file per rule | 12 navigable files instead of 100 boilerplate ones or one 3,000-line file |
+| Auto-discovery | Adding a rule must not require editing a central file |
+| Waivers in v1 | Without them, the first legitimate exception gets "fixed" by commenting out the rule |
+| Findings exit 0 by default | Informative tool. `--strict` exists for CI. |
+| Loader uppercases everywhere | `main.tf` now normalises consistently, so mirroring it is straightforward |
+| `permission_sets` left as a hard index in `main.tf` | Crashing on a typo is correct; a silent default would deploy an empty grant |
+| `config.unknown-field` included in v1 | The `is_transient` bug was exactly this class and took a manual audit to find |
 
 ---
 
-## Databases
-
-**Location:** `configs/envs/*/catalog/databases/*.yaml`
-
-**Pattern:** List of Database Objects
-
-You can define all databases in a single file or split them across multiple files (e.g., by environment or data domain). The parsing engine flattens lists from all matching files and keys them by the uppercase name property.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :---- | :---- | :---- | :---- | :---- |
-| name | String | **Yes** | Unique identifier for the database. Standardized to uppercase. | N/A |
-| comment | String | No | Description / purpose of the database. | null |
-| data_retention_time_in_days | Integer | No | Number of days to retain historical data for Time Travel. | null |
-| is_transient: false | Boolean | No | Transient database | null |
-
-### YAML Blueprint Example
- 
-```yaml
-- name: "DEV_RAW"
-  comment: "Data Lake Landing Zone."
-  is_transient: true
-  data_retention_time_in_days: 1
-
-- name: "DEV_ANALYTICS"
-  comment: "Analytics Data Warehouse."
-  is_transient: true
-  data_retention_time_in_days: 1
-```
-
----
-
-## Schemas
-
-**Location:** `configs/envs/*/catalog/schemas/*.yaml`
-
-**Pattern:** List of Database Schema Grouping Objects
-
-Schemas are organized by grouping a list of `schemas` under their target `database`. The engine automatically constructs internal resource tracking keys using the format `DATABASE.SCHEMA`.
-
-### Structure Definitions
-
-#### Top-Level Database Group
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `database` | String | **Yes** | The parent database where the nested schemas will be created. Standardized to uppercase. | N/A |
-| `schemas` | List(Object) | **Yes** | List of schema definitions belonging to the parent database. | N/A |
-
-#### Schema Object (Nested under `schemas`)
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `name` | String | **Yes** | The name of the schema. Standardized to uppercase. | N/A |
-| `comment` | String | No | Description of the schema's purpose. | `null` |
-| `data_retention_time_in_days` | Integer | No | Overrides the database's default retention setting (in days). | `null` |
-| `with_managed_access` | Boolean | No | Enables managed access schema (centralizes privilege grant management to the schema owner). | `null` |
-
-### YAML Blueprint Example
-
-```yaml
-- database: "DEV_ANALYTICS"
-  schemas:
-    - name: "STAGE"
-      comment: "Raw data landing zone for incoming data"
-      data_retention_time_in_days: 0
-      with_managed_access: true
-
-    - name: "INTERMEDIATE"
-      comment: "Transformed data for analytical use."
-      data_retention_time_in_days: 0
-      with_managed_access: true
-
-    - name: "SNAPSHOT"
-      comment: "Point-in-time copies of analytical data for historical analysis and reporting."
-      data_retention_time_in_days: 0
-      with_managed_access: true
-
-    - name: "MARTS"
-      comment: "Business-facing reporting layers and data marts (Gold layer)."
-      data_retention_time_in_days: 0
-      with_managed_access: true
-```
-
----
-
-
-## Database Grants
-
-**Location:** `configs/envs/*/governance_security/database_grants/*.yaml`  
-**Pattern:** List of Database Grant Assignment Objects
-
-Database grants are stored as a flat list of explicit mappings. Each object binds a single database, role, and corporate privilege together.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `database` | String | **Yes** | The target database on which the privilege is granted. Standardized to uppercase. | N/A |
-| `role` | String | **Yes** | The Snowflake account role receiving the privilege. Standardized to uppercase. | N/A |
-| `privilege` | String | **Yes** | The exact privilege to grant (e.g., `USAGE`, `ALL PRIVILEGES`, `CREATE SCHEMA`). | N/A |
-
-### YAML Blueprint Example
-
-```yaml
-# DEV_RAW
-- database: "DEV_RAW"
-  role: "DEV_INGESTION_ROLE"
-  privilege: 
-    - "USAGE"
-    - "CREATE SCHEMA"
-  all_schemas:
-    - "USAGE"
-  future_schemas:
-    - "USAGE"
-
-- database: "DEV_RAW"
-  role: "DEV_TRANSFORMER_ROLE"
-  privilege: 
-    - "USAGE"
-  all_schemas:
-    - "USAGE"
-  future_schemas:
-    - "USAGE"
-```
-
----
-
-## Schema Grants
-
-**Location:** `configs/envs/*/governance_security/schema_grants/*.yaml`  
-**Pattern:** List of Schema Grant Assignment Objects
-
-Schema grants are stored as a list of explicit mappings that bind target schemas within their parent databases to receiving roles, supporting multiple privileges defined cleanly as an array.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `database` | String | **Yes** | The parent database of the target schema. Standardized to uppercase. | N/A |
-| `schema` | String | **Yes** | The target schema on which the privileges are granted. Standardized to uppercase. | N/A |
-| `role` | String | **Yes** | The Snowflake account role receiving the privilege. Standardized to uppercase. | N/A |
-| `privilege` | List (String) | **Yes** | The array of privileges to grant (e.g., `USAGE`, `CREATE TABLE`, `CREATE VIEW`). | N/A |
-
-### YAML Blueprint Example
-
-```yaml
-# DEV_RAW
-- database: "DEV_RAW"
-  schema: "LANDING"
-  role: "DEV_INGESTION_ROLE"
-  permission_set: "SCHEMA_WRITE"
-
-- database: "DEV_RAW"
-  schema: "LANDING"
-  role: "DEV_TRANSFORMER_ROLE"
-  permission_set: "SCHEMA_READ"
-
-# DEV_ANALYTICS
-- database: "DEV_ANALYTICS"
-  schema: "STAGE"
-  role: "DEV_TRANSFORMER_ROLE"
-  permission_set: "SCHEMA_WRITE"
-
-- database: "DEV_ANALYTICS"
-  schema: "INTERMEDIATE"
-  role: "DEV_TRANSFORMER_ROLE"
-  permission_set: "SCHEMA_WRITE"
-```
-
----
-
-## Role Hierarchy
-
-**Location:** `configs/envs/*/governance_security/role_hierarchy.yaml` 
-
-**Pattern:** List of Role-to-Role Grant Assignment Objects
-
-Role-to-role relationships are stored as a flat list of explicit mappings. In Snowflake's authorization model, granting a child role (an **Account Role** or a **Database Role**) to a parent_role allows the parent_role to inherit all rights and privileges of that child role.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `parent_role` | String | **Yes** | The recipient Account Role receiving the inheritance. Standardized to uppercase. | N/A |
-| `roles` | String | **Yes** | List of child Account Roles being granted to parent_role. Required if granting Account Roles. Standardized to uppercase. | N/A |
-| `database_name` | String | **No** | Name of the database housing the database roles. Required if granting Database Roles. Standardized to uppercase. | `null` |
-| `database_roles` | String | **No** | List of child Database Roles being granted to parent_role. Required if granting Database Roles. | [] |
-
-
-### YAML Blueprint Example
-
-```yaml
-# DEV ENVIRONMENT ROLES
-- role: "DEV_INGESTION_ROLE"
-  parent_role: "SYSADMIN"
-
-- role: "DEV_TRANSFORMER_ROLE"
-  parent_role: "SYSADMIN"
-
-- role: "DEV_REPORTING_ROLE"
-  parent_role: "SYSADMIN"
-
-# Database Role to Account Role Hierarchy
-- database_name: "SNOWFLAKE"
-  database_role: "USAGE_VIEWER"
-  parent_role: "DEV_TRANSFORMER_ROLE"
-```
-
----
-
-## Ownerships
-
-**Location:** `configs/envs/*/governance_security/ownerships.yaml`
-
-**Pattern:** Separated lists for `databases` and `schemas` ownership objects.
-
-The YAML file is structured into two main sections:
-1. **`databases`**: List of databases to have their ownership assigned.
-2. **`schemas`**: List of schemas to have their ownership assigned (requires the parent database context).
-
-### Structure Definitions
-
-#### Database Ownership Objects
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `database_name` | String | **Yes** | The target database whose ownership will be transferred. Standardized to uppercase. | N/A |
-| `account_role` | String | **Yes** | The target Snowflake account role that will own the database. Standardized to uppercase. | N/A |
-
-#### Schema Ownership Objects
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `database_name` | String | **Yes** | The parent database of the target schema. Standardized to uppercase. | N/A |
-| `schema_name` | String | **Yes** | The target schema whose ownership will be transferred. Standardized to uppercase. | N/A |
-| `account_role` | String | **Yes** | The target Snowflake account role that will own the schema. Standardized to uppercase. | N/A |
-
-### YAML Blueprint Example
-
-```yaml
-databases:
-  - database_name: "DEV_RAW"
-    account_role: "DEV_INGESTION_ROLE"
-
-  - database_name: "DEV_ANALYTICS"
-    account_role: "DEV_TRANSFORMER_ROLE"
-
-schemas:
-  - database_name: "DEV_RAW"
-    schema_name: "LANDING"
-    account_role: "DEV_INGESTION_ROLE"
-
-  - database_name: "DEV_ANALYTICS"
-    schema_name: "STAGE"
-    account_role: "DEV_TRANSFORMER_ROLE"
-
-  - database_name: "DEV_ANALYTICS"
-    schema_name: "INTERMEDIATE"
-    account_role: "DEV_TRANSFORMER_ROLE"
-
-  - database_name: "DEV_ANALYTICS"
-    schema_name: "MARTS"
-    account_role: "DEV_TRANSFORMER_ROLE"
-
-  - database_name: "DEV_ANALYTICS"
-    schema_name: "SNAPSHOT"
-    account_role: "DEV_TRANSFORMER_ROLE"
-```
-
----
-
-## Warehouses
-
-**Location:** `configs/envs/*/compute/warehouses/*.yaml`
-
-**Pattern:** List of Virtual Warehouse Objects.
-
-Virtual warehouses are configured in list format and can be organized across multiple environment folders or dedicated compute domain files. The YAML parsing engine automatically standardizes warehouse names to uppercase and sets secure default values for scaling, query acceleration, and auto-suspension.
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `name` | String | **Yes** | Unique identifier for the virtual warehouse. Standardized to uppercase. | N/A |
-| `comment` | String | No | Purpose or operational context for the virtual warehouse. | `null` |
-| `size` | String | No | Size of the warehouse (`X-SMALL`, `SMALL`, `MEDIUM`, `LARGE`, `X-LARGE`, etc.). | `"X-SMALL"` |
-| `auto_resume` | Boolean | No | Automatically restarts the warehouse when a query is submitted. | `true` |
-| `auto_suspend_seconds` | Integer | No | Inactivity duration (in seconds) before automatically suspending compute nodes. | `300` |
-| `max_cluster_count` | Integer | No | Maximum number of compute clusters for multi-cluster auto-scaling. | `1` |
-| `min_cluster_count` | Integer | No | Minimum number of active clusters. | `1` |
-| `initially_suspended` | Boolean | No | Creates the warehouse in a suspended state to prevent unnecessary credit usage upon creation. | `true` |
-| `enable_query_acceleration` | Boolean | No | Enables Snowflake Query Acceleration Service (QAS) for large scans. | `false` |
-| `query_acceleration_max_scale_factor` | Integer | No | Maximum scale factor (multiplier) allowed for Query Acceleration usage (0 to 100). | `0` |
-| `resource_monitor` | String | No | Resouce monitor to be linked to this warehouse. | `null` |
-
-### YAML Blueprint Example
-
-```yaml
-- name: "DEV_WH_INGESTION"
-  comment: "Compute warehouse for DEV_INGESTION_ROLE"
-  size: "X-SMALL"
-  auto_resume: true
-  auto_suspend_seconds: 600
-  max_cluster_count: 4
-  min_cluster_count: 1
-  initially_suspended: true
-  enable_query_acceleration: true
-  query_acceleration_max_scale_factor: 8
-  resource_monitor: "RM_WH_INGESTION"
-
-- name: "DEV_WH_TRANSFORM"
-  comment: "Compute warehouse for DEV_TRANSFORMER_ROLE"
-  size: "X-SMALL"
-  auto_resume: true
-  auto_suspend_seconds: 300
-  max_cluster_count: 2
-  min_cluster_count: 1
-  initially_suspended: true
-  enable_query_acceleration: false
-  query_acceleration_max_scale_factor: 0
-  resource_monitor: "RM_WH_TRANSFORM"
-```
-
----
-
-## Warehouse Grants
-
-**Location:** `configs/envs/*/governance_security/warehouse_grants/*.yaml`
-
-**Pattern:** List of Warehouse Grant Assignment Objects
-
-Warehouse grants define access rights (e.g., `USAGE`, `OPERATE`, `MONITOR`) on virtual warehouses for specific account roles. Like schema and database grants, these are defined as a list of explicit mappings to ensure precise Role-Based Access Control (RBAC).
-
-### Structure Definitions
-
-| Parameter | Type | Required | Description | Default / Fallback |
-| :--- | :--- | :--- | :--- | :--- |
-| `warehouse` | String | **Yes** | The target virtual warehouse name. Standardized to uppercase. | N/A |
-| `role` | String | **Yes** | The Snowflake account role receiving the privilege. Standardized to uppercase. | N/A |
-| `privilege` | List (String) | **Yes** | Array of privileges to grant on the warehouse (e.g., `USAGE`, `OPERATE`, `MONITOR`, `ALL PRIVILEGES`). | N/A |
-
-### YAML Blueprint Example
-
-```yaml
-# Ingestion Warehouse Grants
-- warehouse: "WH_INGESTION"
-  role: "DEV_INGESTION_ROLE"
-  privilege:
-    - "USAGE"
-    - "OPERATE"
-
-# Transformation Warehouse Grants
-- warehouse: "WH_TRANSFORM"
-  role: "DEV_TRANSFORMER_ROLE"
-  privilege:
-    - "USAGE"
-    - "OPERATE"
-    - "MONITOR"
-```
-
----
+## Deliberately out of scope
+
+- **Line-level provenance.** File plus object name locates anything. Revisit only if findings
+  prove hard to track down in practice — and note it means replacing the YAML loader.
+- **Naming-convention rules.** See above.
+- **Validating `terraform show -json` instead of the YAML.** It would catch bugs in `main.tf`'s
+  own parsing, which YAML-level validation cannot — but it needs credentials, a full plan, and
+  produces worse messages. Every rule identified so far is answerable from YAML alone.
+- **Anything that writes.** The validator never modifies configuration, and never will.
+  Auto-fixing is a different tool with different risks.
