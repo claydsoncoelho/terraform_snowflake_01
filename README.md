@@ -54,7 +54,7 @@ https://docs.snowflake.com/en/user-guide/security-access-control-privileges
 | Configuration Item | Path Pattern | Scope |
 | :--- | :--- | :--- |
 | **Permission Sets** | `configs/envs/common/governance_security/permission_sets.yaml` | Common |
-| **Resource Monitors** | `configs/envs/*/admin/resource_monitors/*.yaml` | Common |
+| **Resource Monitors** | `configs/envs/*/admin/resource_monitors/*.yaml` | Env-Specific |
 | **Account Parameters** | `configs/envs/common/governance_security/account_parameter.yaml` | Common |
 | **Network Rules** | `configs/envs/common/governance_security/network_rules.yaml` | Common |
 | **Network Policies** | `configs/envs/common/governance_security/network_policies.yaml` | Common |
@@ -68,6 +68,7 @@ https://docs.snowflake.com/en/user-guide/security-access-control-privileges
 | **Role Hierarchy** | `configs/envs/*/governance_security/role_hierarchy.yaml` | Env-Specific |
 | **Ownerships** | `configs/envs/*/governance_security/ownerships.yaml` | Env-Specific |
 | **Warehouses** | `configs/envs/*/compute/warehouses/*.yaml` | Env-Specific |
+| **Warehouse Grants** | `configs/envs/*/governance_security/warehouse_grants/*.yaml` | Env-Specific |
 
 
 # Configurations
@@ -415,7 +416,7 @@ You can define all databases in a single file or split them across multiple file
 | name | String | **Yes** | Unique identifier for the database. Standardized to uppercase. | N/A |
 | comment | String | No | Description / purpose of the database. | null |
 | data_retention_time_in_days | Integer | No | Number of days to retain historical data for Time Travel. | null |
-| is_transient: false | Boolean | No | Transient database | null |
+| is_transient | Boolean | No | Creates the database as transient (no Fail-safe, reduced Time Travel). | `false` |
 
 ### YAML Blueprint Example
  
@@ -501,7 +502,9 @@ Database grants are stored as a flat list of explicit mappings. Each object bind
 | :--- | :--- | :--- | :--- | :--- |
 | `database` | String | **Yes** | The target database on which the privilege is granted. Standardized to uppercase. | N/A |
 | `role` | String | **Yes** | The Snowflake account role receiving the privilege. Standardized to uppercase. | N/A |
-| `privilege` | String | **Yes** | The exact privilege to grant (e.g., `USAGE`, `ALL PRIVILEGES`, `CREATE SCHEMA`). | N/A |
+| `privilege` | List (String) | **Yes** | Privileges on the database itself (e.g. `USAGE`, `CREATE SCHEMA`). | `[]` |
+| `all_schemas` | List (String) | No | Privileges granted on all existing schemas in the database. | `[]` |
+| `future_schemas` | List (String) | No | Privileges granted on all future schemas in the database. | `[]` |
 
 ### YAML Blueprint Example
 
@@ -595,19 +598,18 @@ Role-to-role relationships are stored as a flat list of explicit mappings. In Sn
 
 ```yaml
 # DEV ENVIRONMENT ROLES
-- role: "DEV_INGESTION_ROLE"
-  parent_role: "SYSADMIN"
-
-- role: "DEV_TRANSFORMER_ROLE"
-  parent_role: "SYSADMIN"
-
-- role: "DEV_REPORTING_ROLE"
-  parent_role: "SYSADMIN"
+- parent_role: "SYSADMIN"
+  roles: 
+    - "DEV_INGESTION_ROLE"
+    - "DEV_TRANSFORMER_ROLE"
+    - "DEV_REPORTING_ROLE"
 
 # Database Role to Account Role Hierarchy
-- database_name: "SNOWFLAKE"
-  database_role: "USAGE_VIEWER"
-  parent_role: "DEV_TRANSFORMER_ROLE"
+- parent_role: "DEV_TRANSFORMER_ROLE"
+  database_name: "SNOWFLAKE"
+  database_roles: 
+    - "USAGE_VIEWER"
+    - "DATA_METRIC_USER"
 ```
 
 ---
